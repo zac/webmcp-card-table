@@ -16,6 +16,8 @@ const ACTION_OPTIONS: { name: ActionName; label: string }[] = [
   { name: "deal", label: "Deal" },
   { name: "draw", label: "Draw" },
   { name: "move", label: "Play to piles" },
+  { name: "play_next", label: "Play next card" },
+  { name: "collect", label: "Collect piles" },
   { name: "give", label: "Give cards" },
   { name: "reveal", label: "Reveal" },
   { name: "shuffle", label: "Shuffle" },
@@ -214,10 +216,23 @@ export function SiteHeader({ onHome }: { onHome?: () => void }) {
 function DraftEditor({ draft, onChange }: { draft: GameContract; onChange: (draft: GameContract) => void }) {
   const update = <K extends keyof GameContract>(key: K, value: GameContract[K]) => onChange({ ...draft, [key]: value });
   const discardEnabled = draft.zones.some((zone) => zone.id === "discard");
+  const hiddenDeckEnabled = draft.zones.some((zone) => zone.id === "deck" && zone.scope === "seat");
+  const seatZones = draft.zones.filter((zone) => zone.scope === "seat");
 
   function toggleAction(action: ActionName) {
     const enabled = draft.allowedActions.includes(action);
     update("allowedActions", enabled ? draft.allowedActions.filter((item) => item !== action) : [...draft.allowedActions, action]);
+  }
+
+  function toggleHiddenDeck(enabled: boolean) {
+    if (enabled) {
+      const zones = hiddenDeckEnabled
+        ? draft.zones
+        : [...draft.zones, { id: "deck", kind: "pile" as const, facing: "down" as const, scope: "seat" as const, visibility: "hidden" as const, ordered: true }];
+      onChange({ ...draft, zones, startingZoneId: "deck" });
+    } else {
+      onChange({ ...draft, zones: draft.zones.filter((zone) => !(zone.id === "deck" && zone.scope === "seat")), startingZoneId: "hand" });
+    }
   }
 
   return (
@@ -225,12 +240,13 @@ function DraftEditor({ draft, onChange }: { draft: GameContract; onChange: (draf
       <label>Game name<input value={draft.name} maxLength={80} onChange={(event) => update("name", event.target.value)} /></label>
       <label className="prompt-field">Game brief<textarea value={draft.gamePrompt} maxLength={2_000} rows={8} onChange={(event) => update("gamePrompt", event.target.value)} /><small>{draft.gamePrompt.length} / 2,000 · Shared with both seats as untrusted game content</small></label>
       <details className="advanced-settings">
-        <summary>Advanced table settings <span>{draft.startingHandSize} cards · {draft.turnOrder}</span></summary>
+        <summary>Advanced table settings <span>{draft.startingHandSize} cards to {draft.startingZoneId} · {draft.turnOrder}</span></summary>
         <div className="advanced-grid">
           <label>Starting hand<input type="number" min={0} max={26} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
           <label>Turn handling<select value={draft.turnOrder} onChange={(event) => update("turnOrder", event.target.value as GameContract["turnOrder"])}><option value="manual">Players manage turns</option><option value="alternating">Table enforces turns</option></select></label>
+          <label>Opening cards<select value={draft.startingZoneId} onChange={(event) => update("startingZoneId", event.target.value)}><option value="hand">Visible hand</option>{seatZones.map((zone) => <option key={zone.id} value={zone.id}>{zone.id.replaceAll("_", " ")} ({zone.visibility})</option>)}</select></label>
         </div>
-        <fieldset className="choice-fieldset"><legend>Public zones</legend><label className="check-choice"><input type="checkbox" checked disabled /> Face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up", scope: "shared", visibility: "public", ordered: true }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Face-up discard</label></fieldset>
+        <fieldset className="choice-fieldset"><legend>Zones</legend><label className="check-choice"><input type="checkbox" checked disabled /> Shared face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up", scope: "shared", visibility: "public", ordered: true }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Shared face-up discard</label><label className="check-choice"><input type="checkbox" checked={hiddenDeckEnabled} onChange={(event) => toggleHiddenDeck(event.target.checked)} /> Hidden ordered deck for each seat</label></fieldset>
         <fieldset className="choice-fieldset"><legend>Allowed actions</legend><div className="choice-row">{ACTION_OPTIONS.map((action) => <label className="check-choice" key={action.name}><input type="checkbox" checked={draft.allowedActions.includes(action.name)} onChange={() => toggleAction(action.name)} /> {action.label}</label>)}</div></fieldset>
       </details>
     </div>

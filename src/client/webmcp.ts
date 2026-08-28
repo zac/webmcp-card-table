@@ -38,6 +38,7 @@ export interface DraftTableInput {
   name?: string;
   gamePrompt?: string;
   startingHandSize?: number;
+  openingCards?: "hand" | "hidden_deck";
   turnOrder?: GameContract["turnOrder"];
   includeDiscard?: boolean;
   allowedActions?: ActionName[];
@@ -75,6 +76,7 @@ export function registerLobbyTools(context: WebMcpContext, handlers: LobbyToolHa
         name: { type: "string", minLength: 1, maxLength: 80 },
         gamePrompt: { type: "string", minLength: 1, maxLength: 2_000 },
         startingHandSize: { type: "integer", minimum: 0, maximum: 26 },
+        openingCards: { type: "string", enum: ["hand", "hidden_deck"] },
         turnOrder: { type: "string", enum: ["alternating", "manual"] },
         includeDiscard: { type: "boolean" },
         allowedActions: stringArray(["deal", "draw", "move", "play_next", "collect", "give", "reveal", "shuffle", "announce", "react", "end_turn"]),
@@ -84,18 +86,23 @@ export function registerLobbyTools(context: WebMcpContext, handlers: LobbyToolHa
     execute: async (input: DraftTableInput) => {
       const preset = input.preset === undefined ? undefined : GAME_PRESETS.find((candidate) => candidate.id === input.preset);
       const current = preset ? structuredClone(preset.contract) : handlers.getDraft();
-      const zones = input.includeDiscard === undefined
+      let zones = input.includeDiscard === undefined
         ? current.zones
         : input.includeDiscard
           ? current.zones.some((zone) => zone.id === "discard")
             ? current.zones
             : [...current.zones, { id: "discard", kind: "discard" as const, facing: "up" as const, scope: "shared" as const, visibility: "public" as const, ordered: true }]
           : current.zones.filter((zone) => zone.id !== "discard");
+      if (input.openingCards === "hidden_deck" && !zones.some((zone) => zone.id === "deck" && zone.scope === "seat")) {
+        zones = [...zones, { id: "deck", kind: "pile", facing: "down", scope: "seat", visibility: "hidden", ordered: true }];
+      }
+      if (input.openingCards === "hand") zones = zones.filter((zone) => !(zone.id === "deck" && zone.scope === "seat"));
       const next = validateContract({
         ...current,
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(input.gamePrompt === undefined ? {} : { gamePrompt: input.gamePrompt }),
         ...(input.startingHandSize === undefined ? {} : { startingHandSize: input.startingHandSize }),
+        ...(input.openingCards === undefined ? {} : { startingZoneId: input.openingCards === "hidden_deck" ? "deck" : "hand" }),
         ...(input.turnOrder === undefined ? {} : { turnOrder: input.turnOrder }),
         ...(input.allowedActions === undefined ? {} : { allowedActions: input.allowedActions }),
         zones,

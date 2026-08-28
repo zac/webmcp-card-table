@@ -38,6 +38,19 @@ describe("WebMCP lobby tools", () => {
     expect(requestStart).toHaveBeenCalledWith(execution.signal);
     expect(signals.get("start_table")).toBe(lifecycle.signal);
   });
+
+  it("can draft an owner-hidden opening deck without creating a game-specific mode", async () => {
+    const { context, tools } = registry();
+    let draft = structuredClone(DEFAULT_FREE_PLAY_CONTRACT);
+    registerLobbyTools(context, {
+      getDraft: () => draft,
+      setDraft: (next) => { draft = next; },
+      requestStart: vi.fn(),
+    }, new AbortController().signal);
+    await tools.get("draft_table")!.execute({ openingCards: "hidden_deck", startingHandSize: 26 });
+    expect(draft.startingZoneId).toBe("deck");
+    expect(draft.zones).toContainEqual({ id: "deck", kind: "pile", facing: "down", scope: "seat", visibility: "hidden", ordered: true });
+  });
 });
 
 describe("WebMCP table tools", () => {
@@ -64,5 +77,19 @@ describe("WebMCP table tools", () => {
     expect([...tools.keys()].sort()).toEqual(["announce", "inspect_table", "reveal_cards"]);
     expect(tools.has("end_turn")).toBe(false);
     expect(tools.has("draw_cards")).toBe(false);
+  });
+
+  it("registers generic ordered-pile tools for a War-style contract", async () => {
+    const { context, tools } = registry();
+    const current = view();
+    current.contract = { ...current.contract, allowedActions: ["play_next", "collect"] };
+    current.self.zones = [{ zoneId: "deck", kind: "pile", visibility: "hidden", ordered: true, cardCount: 26, cards: [] }];
+    current.opponent.zones = [{ zoneId: "deck", kind: "pile", ordered: true, cardCount: 26 }];
+    current.publicZones.push({ zoneId: "battle", kind: "pile", ordered: true, cardCount: 0, cards: [] });
+    const executeAction = vi.fn(async () => ({ ...current, revision: 4 }));
+    registerTableTools(context, { getView: () => current, executeAction }, new AbortController().signal);
+    expect([...tools.keys()].sort()).toEqual(["collect_pile", "inspect_table", "play_next_card"]);
+    await tools.get("play_next_card")!.execute({ sourceZoneId: "deck", targetZoneId: "battle", face: "up" });
+    expect(executeAction).toHaveBeenCalledWith({ type: "play_next", sourceZoneId: "deck", targetZoneId: "battle", face: "up" }, expect.any(AbortSignal));
   });
 });
