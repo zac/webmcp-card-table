@@ -10,15 +10,17 @@
   "scripts": {
     "dev": "vite",
     "dev:worker": "pnpm build && wrangler dev",
-    "build": "tsc -b && vite build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:worker && pnpm build",
+    "build": "pnpm types && pnpm build:generated",
+    "build:generated": "tsc -b && vite build",
+    "check": "pnpm types && pnpm lint && pnpm typecheck:generated && pnpm test && pnpm test:worker && pnpm build:generated",
     "deploy": "pnpm build && wrangler deploy --env=",
     "deploy:dry": "pnpm build && wrangler deploy --env= --dry-run",
     "lint": "eslint .",
     "test": "vitest run",
     "test:worker": "vitest run --config vitest.worker.config.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "pnpm types && pnpm typecheck:generated",
+    "typecheck:generated": "tsc -b --pretty false",
     "types": "wrangler types"
   },
   "dependencies": {
