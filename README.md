@@ -135,7 +135,7 @@ pnpm deploy
 
 The Worker and Durable Object use the internal name `webmcp-card-table`. The production build serves the React assets and Worker APIs from the same origin.
 
-Cloudflare Workers Builds is connected to `zac/webmcp-card-table` with `main` as the production branch, `pnpm check` as the build command, and Wrangler as the deploy command. Preview-branch builds are disabled.
+Cloudflare Workers Builds is configured for `zac/webmcp-card-table` with `main` as the production branch, `pnpm check` as the build command, and Wrangler as the deploy command. Preview-branch builds are disabled. The Git account connection must remain active in the Worker settings; if Cloudflare reports it disconnected, pushes will not trigger builds and the project must be reconnected before relying on continuous deployment.
 
 ## Repository map
 
