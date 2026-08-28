@@ -1,65 +1,69 @@
 # Card Table
 
-Card Table is a two-seat playing-card product built for the [WebMCP Challenge](https://webmcp.devpost.com/). A human can play every action through the interface, or let a browser agent use the equivalent browser-native WebMCP tools.
+Card Table is a prompt-defined, two-seat playing-card table built for the [WebMCP Challenge](https://webmcp.devpost.com/). Describe a game that uses a standard 52-card deck, open a private room, and either play through the interface or let ChatGPT or Codex use equivalent browser-native WebMCP tools.
 
 [Open the live table](https://webmcp-card-table.zacwhite.workers.dev/) · [Browse the source](https://github.com/zac/webmcp-card-table)
 
-It includes:
+The product has one shape:
 
-- deterministic single-player Go Fish against a house player
-- private two-player free-play rooms for games that use a standard 52-card deck
-- real-time, seat-specific updates over hibernatable WebSockets
-- browser-native tools registered with `document.modelContext`
-- an explicit in-page approval step before an agent can create a room
+1. Pick Go Fish, Crazy Eights, War, or Open Table as a starting point.
+2. Edit the plain-language game brief and optional table mechanics.
+3. Open the table and copy a one-use guest invite, a ready-made guest Codex prompt, or a prompt for Codex to play your own seat.
+4. Play with direct controls, WebMCP tools, or both. Every action uses the same reducer and server authorization path.
 
-The application is React and TypeScript on a Cloudflare Worker. Each room is one SQLite-backed Durable Object.
+Presets are not hard-coded game modes. They only prefill a normal table contract. Card Table enforces ownership, privacy, revisions, zones, and optional alternating turns; the two players referee the game described in their brief.
 
 ## Why WebMCP matters here
 
-The agent does not click pixels or infer card state from the screen. It receives a small, typed tool set for the current mode and acts through the same reducer and authorization path as the UI.
+A browser agent does not need to click pixels or infer card state from a screenshot. It receives a small, typed set of product operations and a private view of its own seat.
 
-On the lobby:
+The lobby registers:
 
 | Tool | Purpose |
 | --- | --- |
-| `draft_table` | Update the visible free-play contract without creating anything |
-| `start_table` | Wait for human approval, then create the drafted room |
+| `draft_table` | Pick a preset or update the visible game name, brief, hand size, turns, zones, and actions |
+| `start_table` | Wait for an explicit in-page human approval, then create the room |
 
-At a free-play table, tools are registered only when the contract allows the matching action: `inspect_table`, `deal_cards`, `draw_cards`, `move_cards`, `give_cards`, `reveal_cards`, `shuffle_pile`, `end_turn`, and `react`.
+At a table, tools are registered only when the contract allows the matching action:
 
-At a Go Fish table, the tool set is deliberately smaller: `inspect_table`, `request_rank`, `reveal_cards`, and `react`. There is no `end_turn`; the Go Fish transaction decides whether the player continues or the turn passes.
+- `inspect_table`
+- `deal_cards`
+- `draw_cards`
+- `move_cards`
+- `give_cards`
+- `reveal_cards`
+- `shuffle_pile`
+- `announce`
+- `react`
+- `end_turn`
 
-Tool registrations are feature-detected and scoped to the current route with an `AbortController`. Read-only and untrusted-content hints are applied explicitly. Tool results are bounded JSON strings, and execution cancellation is forwarded to network work when the browser supplies a signal.
+`announce` is a bounded 160-character public game channel. It lets players make requests and declarations—“Do you have any queens?”, “Eights are hearts”, “I won this battle”—without adding a general-purpose chat product.
 
-## Product behavior
+Registrations feature-detect `document.modelContext` and are scoped to the active route with an `AbortController`. Results are bounded JSON. Tool execution forwards cancellation to the network request. The game brief and announcements are always labeled as untrusted player-authored content.
 
-Free-play contracts define the game name, objective, starting hand, public zones, turn style, allowed operations, win condition, and an optional note. These labels are player-controlled content, not instructions to the application or agent.
+## Product and security behavior
 
-Practice Go Fish follows fixed rules:
+A `GameContract` contains a name, a game prompt of at most 2,000 characters, a 0–26 card starting hand, manual or alternating turns, public zones, and an allow-list of operations. Exactly one stock is required.
 
-- ask only for a rank in your hand
-- a catch transfers every matching card and keeps the turn
-- a miss draws from the stock
-- drawing the requested rank keeps the turn; otherwise the turn passes
-- four matching cards are laid down automatically as a book
-- an empty active hand draws one card when possible
-- the game finishes after all thirteen books are made
+All mutations carry an opaque `actionId` and `expectedRevision`. The pure reducer rejects duplicates, stale revisions, disabled actions, wrong turns, unknown zones, and card IDs not owned by the acting seat.
 
-The house chooses the rank with the highest count in its hand and breaks ties ace-low. Its next move and room expiry share the Durable Object's single alarm.
+Every card receives a cryptographically randomized opaque ID. Only the owning seat receives its private hand. Opponent hands expose a count only. Face-down public cards expose an ID and face state, never rank or suit.
+
+Seat sessions use room-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies. Guest invite tokens live in URL fragments, are redeemed once, and are removed from the address bar before the browser makes a room request. Request logs never include bodies, cookies, invite tokens, prompts, announcements, or card faces.
 
 ## Architecture
 
 ```text
-React UI ───────┐
-WebMCP tools ───┼─> validated HTTP action ─> GameRoom Durable Object
-WebSocket sync ─┘                              │
-                                              ├─ SQLite snapshot + events
-                                              ├─ seat sessions + one-use invite
-                                              ├─ pure shared reducer
-                                              └─ bot/expiry alarm
+React controls ──┐
+WebMCP tools ────┼──> validated HTTP action ──> GameRoom Durable Object
+WebSocket sync ──┘                                  │
+                                                    ├─ SQLite snapshot + events
+                                                    ├─ seat sessions + one-use invite
+                                                    ├─ pure shared reducer
+                                                    └─ 24-hour expiry alarm
 ```
 
-All mutations carry an opaque `actionId` and `expectedRevision`. The reducer rejects duplicates, stale revisions, disabled actions, wrong turns, unknown zones, and cards not owned by the acting seat. Card IDs are randomized and opaque. Only the owning seat receives its hand; face-down public cards and the other seat's hand do not expose rank or suit.
+Each room maps to one SQLite-backed Durable Object. State is persisted before a projected update is broadcast over hibernatable WebSockets. A reconnecting client sends its last revision and receives a seat-specific snapshot when stale.
 
 ## Local development
 
@@ -71,7 +75,7 @@ pnpm types
 pnpm dev:worker
 ```
 
-That builds the client and serves the full Worker at `http://localhost:8787`. For Vite hot reload, keep `pnpm dev:worker` running and start `pnpm dev` in a second terminal; open `http://localhost:5173`.
+The full Worker runs at `http://localhost:8787`.
 
 ## Verification
 
@@ -84,46 +88,42 @@ pnpm build
 pnpm deploy:dry
 ```
 
-`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build.
-
-The test suites cover reducer and projection invariants, revisions, idempotency, authorization, all pinned Go Fish branches, deterministic bot choices, alarm scheduling, room persistence, one-use invitations, cookie isolation, per-seat projections, WebSocket reconnects, Durable Object eviction, tool registration by mode, cancellation forwarding, and UI/tool action parity.
+`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build. The suites cover reducer invariants, prompt and message bounds, authorization, revisions, idempotency, visibility projections, shuffled-card identity, room persistence, one-use invites, cookie isolation, WebSocket resynchronization, hibernation, expiry, tool registration, approval, and cancellation forwarding.
 
 For a browser acceptance pass:
 
-1. Open the lobby in Chrome with WebMCP enabled or ChatGPT's in-app browser.
-2. Query the page's actual tool registry and confirm only `draft_table` and `start_table` are present.
-3. Call `draft_table` and confirm the visible editor changes.
-4. Call `start_table`; decline once and confirm no room is created, then call it again and approve.
-5. At the table, query the registry again and call `inspect_table` plus one legal mutation.
-6. Open Practice Go Fish and confirm there is no `end_turn` or generic draw tool.
+1. Open the lobby in ChatGPT's in-app browser or Chrome with WebMCP enabled.
+2. Query the browser's actual WebMCP registry and confirm `draft_table` and `start_table` are present.
+3. Draft a preset or custom game and confirm the visible rules slip changes.
+4. Call `start_table`; decline once, then call it again and approve.
+5. Confirm the table registry matches the contract, call `inspect_table`, and make one legal mutation.
+6. Copy the guest Codex prompt, redeem the invitation in a second browser session, and confirm seat-private hands plus real-time updates.
+7. Refresh both seats and confirm they recover the current projected snapshot.
 
 ## API
 
-- `POST /api/rooms`
+- `POST /api/rooms` with `{ contract }`
 - `POST /api/rooms/:roomId/redeem`
 - `GET /api/rooms/:roomId/view`
 - `POST /api/rooms/:roomId/actions`
 - `GET /api/rooms/:roomId/socket`
 
-Seat sessions use room-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies. An invite token is placed in the URL fragment so it is not sent in an HTTP request, redeemed once, and removed from browser history immediately. Request logs contain method, path, status, duration, and a request ID; they do not contain bodies, cookies, invite tokens, or private card faces.
-
 ## Deployment
-
-Authenticate Wrangler, then run:
 
 ```sh
 pnpm deploy:dry
 pnpm deploy
 ```
 
-The Worker and Durable Object are named `webmcp-card-table`. Do not commit `.dev.vars`, `.env` files, generated binding types, Wrangler state, or deployment credentials.
+The Worker and Durable Object use the internal name `webmcp-card-table`. The production build serves the React assets and Worker APIs from the same origin.
 
 ## Repository map
 
-- `src/shared`: contracts, deck, reducer, bot logic, projections, and unit tests
-- `src/worker`: Worker routes, authentication, Durable Object, WebSockets, and workerd tests
+- `src/shared`: contracts, presets, deck, reducer, projections, and unit tests
+- `src/worker`: routes, authentication, Durable Object, WebSockets, and workerd tests
 - `src/client`: React interface, API client, WebMCP registration, and tool tests
-- `plans/webmcp-playing-card-table.md`: controlling implementation plan
+- `evals/browser-prompts.md`: manual WebMCP acceptance prompts
+- `plans/webmcp-playing-card-table.md`: revised product and implementation plan
 
 ## License
 

@@ -1,176 +1,118 @@
-# WebMCP playing-card table
+# WebMCP Playing-Card Table — Revised Product Plan
 
 ## Summary
 
-Build an original two-seat playing-card table where humans coach browser agents through one turn at a time. The product uses a standard 52-card deck, not Magic assets or rules.
+Build one focused product: a private, prompt-defined two-player table for any game that can be played with a standard 52-card deck. Direct UI controls and browser-native WebMCP tools expose the same product operations.
 
-The submission has two modes:
+Go Fish, Crazy Eights, and War are suggested prompts, not distinct application modes. There is no house bot or game-specific rules adapter. This keeps the demonstration centered on the site's WebMCP surface: an agent can understand a user-authored game brief, inspect its private seat, coordinate with another seat, and manipulate shared state safely.
 
-- **Practice Go Fish.** A reliable solo match against a deterministic house player.
-- **Free play.** Two people join through an invite link and use generic deck, hand, pile, reveal, transfer, shuffle, and turn operations under a structured rules contract.
-
-The core pitch is: existing card tables are mouse-first and opaque to agents. This table gives agents typed operations while the server protects hidden hands, ownership, and shared state.
-
-Success means a judge can open the live URL, start practice mode, ask ChatGPT or Codex to play one turn, and watch the table update correctly without setup or another person.
+Success means a judge can open the live URL, choose or write a game, approve room creation, copy a guest or player Codex prompt, and watch a legal tool action update both seats in real time.
 
 ## Product experience
 
-- Use a modern dark card-table presentation with original CSS and SVG playing cards, restrained animations, turn status, books, piles, and a structured event log.
-- Provide direct human controls for every operation exposed through WebMCP. Agent actions and human actions must use the same application reducer and server endpoint.
-- In the lobby, register `draft_table`. A host can ask their agent to configure a table using a bounded contract containing:
-  - Game name and objective
-  - Exactly two seats (fixed; not configurable)
-  - Starting hand size from 0 through 13
-  - Alternating or manual turns
-  - Enabled piles and face-up or face-down play
-  - Allowed generic operations
-  - Win condition
-  - Optional 280-character note
-- Render the draft visually before creation. `start_table` validates the current draft and opens an in-page approval dialog; its promise resolves with the room and invite URL only after the human clicks Approve, rejects if the human declines, and cancels cleanly through the execution `AbortSignal`. The agent can never create a room without a human click.
-- Practice mode starts a fixed two-player Go Fish contract with seven-card hands, books of four, and a deterministic house player.
-- Free-play rooms expose a single-use invite URL. Remove the invite token from the address bar immediately after redemption.
-- Omit arbitrary chat. Show only structured events such as rank requests, transfers, draws, reveals, passes, and reactions. Reactions come from a small fixed set (no free text), so nothing a player sends can carry arbitrary content.
+- The lobby is a single “new table” flow with four starting points: Go Fish, Crazy Eights, War, and Open Table.
+- Choosing a preset fills an ordinary game name, prompt, hand size, turn style, zones, and action allow-list. Editing it produces a custom table.
+- Advanced settings stay collapsed by default. They expose starting hand size, manual or alternating turns, public zones, and allowed actions.
+- `start_table` always waits for an explicit in-page approval dialog. Decline and cancellation reject the pending tool call without creating a room.
+- Every room has a one-use fragment invite. The host gets three clear handoffs:
+  - Copy invite
+  - Copy guest Codex prompt
+  - Play my seat with Codex
+- The guest redeems the token once; the fragment is immediately cleared.
+- The table includes private hands, public piles, turn/connection state, the game brief, direct controls, fixed reactions, and a structured event log.
+- A bounded 160-character `announce` operation lets players make in-game requests and declarations. It is public, rendered as text, retained only in bounded room history, and treated as untrusted content.
 
-## Game rules
-
-### Turn order semantics
-
-- **Alternating:** exactly one active seat at a time. The server rejects actions from the inactive seat; `end_turn` passes control.
-- **Manual:** `activeSeatId` is `null`, turn checks are skipped, and either seat may act at any time; `end_turn` emits a pass event only. Intended for casual free-play games where the humans referee themselves.
-
-### Go Fish (practice mode)
-
-Pin the variant explicitly so the adapter, house player, and tests agree:
-
-- A seat may only request a rank it currently holds at least one card of.
-- On a catch, the opponent transfers every card of that rank and the asker goes again.
-- On a miss, the asker draws one card from the stock ("go fish"). If the drawn card is the requested rank, it is revealed and the asker goes again; otherwise the turn passes.
-- Books of four are laid down automatically the moment they form, including immediately after the deal.
-- If the stock is empty, a miss simply passes the turn with no draw.
-- If a seat starts its turn with an empty hand, it draws one card from the stock; if the stock is also empty, it passes.
-- The game ends when all thirteen books are made. The seat with more books wins (thirteen is odd, so no ties).
-
-The house player chooses the rank it holds the most copies of, breaking ties by rank order (aces low), so every game is reproducible. It uses no model API and runs entirely inside the Durable Object: after the human's turn ends, house actions are paced by a short (~1 second) Durable Object alarm per action so the event log reads naturally, with state persisted after each step. The house seat has no cookie or HTTP surface.
-
-## Architecture and interfaces
-
-- Use a Vite React TypeScript SPA, Cloudflare Worker, Workers Static Assets, and one SQLite-backed `GameRoom` Durable Object per room (id derived via `idFromName(roomId)`). Cloudflare recommends one object per game session and hibernatable WebSockets for persistent room connections.[ ](https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/)[ ](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
-- Persist a versioned JSON game snapshot and structured event records in SQLite before broadcasting updates. Never depend on in-memory state surviving hibernation.
-- Authenticate each seat with an opaque, room-scoped, `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Store only hashed session and invite tokens. The WebSocket upgrade authenticates with the same cookie and is bound to a seat before any messages flow.
-- Give every card an opaque random ID unique to the room. Rank and suit serialize only when the card is in the caller's own hand or books, or face-up in a public zone. Face-down cards in public zones serialize as bare IDs and counts. (A player who watched a specific face-down card move may track its ID — the same information a physical table leaks — but never its identity.)
-- Keep opponent hands entirely out of that seat's HTTP responses, WebSocket messages, DOM, and WebMCP results.
-- Expire rooms after 24 hours of inactivity through a Durable Object alarm; every accepted action resets the clock.
-- Use these HTTP interfaces:
-  - `POST /api/rooms` creates a practice or free-play room and sets the host's seat cookie.
-  - `POST /api/rooms/:id/redeem` exchanges a single-use invite token for the second-seat cookie.
-  - `GET /api/rooms/:id/view` returns the caller's seat-scoped view.
-  - `POST /api/rooms/:id/actions` accepts `{ actionId, expectedRevision, action }`.
-  - `GET /api/rooms/:id/socket` upgrades to a hibernatable WebSocket. On connect the client sends its last known revision; the server replies with a full seat-scoped snapshot if the client is stale, then streams incremental events.
-- Reject duplicate action IDs, stale revisions, actions from the wrong seat, card IDs the caller does not own, invalid zone transitions, out-of-range draw counts, actions not in the contract's `allowedActions`, and actions taken out of turn.
-
-Core public types:
+## Shared contract and reducer
 
 ```ts
-type GameKind = "go_fish" | "free_play";
-
-type GenericActionName =
-  | "draw" | "move" | "give" | "reveal" | "shuffle" | "react" | "end_turn";
-type GoFishActionName = "request_rank";
-
-interface ZoneConfig {
-  id: string;
-  kind: "stock" | "discard" | "pile";
-  facing: "up" | "down";
-}
-
 interface GameContract {
-  kind: GameKind;
-  name: string;
-  objective: string;
-  startingHandSize: number; // 0–13
+  name: string;                 // 1–80 characters
+  gamePrompt: string;           // 1–2,000 characters, untrusted
+  startingHandSize: number;     // 0–26
   turnOrder: "alternating" | "manual";
-  zones: ZoneConfig[]; // a stock zone is always present
-  allowedActions: (GenericActionName | GoFishActionName)[];
-  winCondition: string;
-  note?: string; // ≤ 280 characters
+  zones: ZoneConfig[];          // exactly one stock
+  allowedActions: ActionName[];
 }
 
-interface PublicZoneView {
-  zoneId: string;
-  kind: ZoneConfig["kind"];
-  cardCount: number;
-  faceUp: CardView[]; // face-down cards contribute to cardCount only
-}
-
-interface TableView {
-  roomId: string;
-  revision: number;
-  contract: GameContract;
-  activeSeatId: string | null; // null under manual turn order
-  self: { seatId: string; hand: CardView[]; books?: CardView[][] };
-  opponent: { seatId: string; cardCount: number; bookCount?: number };
-  publicZones: PublicZoneView[];
-  recentEvents: TableEvent[];
-}
-
-type TableAction =
-  | { type: "draw"; zoneId: string; count: number } // 1–13, capped at zone size
-  | { type: "move"; cardIds: string[]; zoneId: string; face: "up" | "down" }
-  | { type: "give"; cardIds: string[]; targetSeatId: string }
-  | { type: "reveal"; cardIds: string[] } // announce cards from hand without moving them
-  | { type: "shuffle"; zoneId: string }
-  | { type: "react"; reaction: "well_played" | "thinking" | "ouch" | "gg" }
-  | { type: "end_turn" }
-  | { type: "request_rank"; rank: Rank }; // go_fish only
+type ActionName =
+  | "deal" | "draw" | "move" | "give" | "reveal"
+  | "shuffle" | "announce" | "react" | "end_turn";
 ```
 
-`books` and `bookCount` are populated only for Go Fish; free-play contracts omit them. The practice contract's `allowedActions` is `["request_rank", "reveal", "react", "end_turn"]` — draws and transfers happen inside the atomic `request_rank` resolution, never as separate agent actions.
+- A pure reducer is shared by UI actions, HTTP actions, WebSocket updates, WebMCP calls, and tests.
+- Every mutation requires `actionId` and `expectedRevision`.
+- Manual turns allow either seat to act; `end_turn` records a pass. Alternating turns enforce one active seat and pass control with `end_turn`.
+- The application enforces deck integrity, ownership, visibility, zones, allowed actions, and turn authority. Players enforce the game rules in the brief.
+- Cards have opaque randomized IDs. Seat projections include faces for the caller's hand only. Public faces appear only when a card is face-up.
 
-Register these browser-native tools through `document.modelContext.registerTool`:
+## Cloudflare architecture
 
-- Lobby: `draft_table`, `start_table`
-- Table: `inspect_table`, `get_rules`, `draw_cards`, `move_cards`, `give_cards`, `reveal_cards`, `shuffle_pile`, `react`, `end_turn`
-- Go Fish only: `request_rank` (the generic mutation tools are not registered in practice mode)
+- Vite, React, and TypeScript SPA served through Worker Static Assets.
+- One SQLite-backed `GameRoom` Durable Object per room, addressed by room ID.
+- SQLite stores the versioned snapshot, event history, hashed sessions, hashed invitation, and redemption state.
+- Critical state is persisted before any WebSocket broadcast.
+- Hibernatable WebSockets store only seat and last-revision attachments.
+- A single Durable Object alarm expires the room 24 hours after its latest accepted action.
+- No server-side model, random matchmaking, third-party game assets, or external database.
 
-Use an `AbortController` to replace route-specific registrations and forward each execution's `AbortSignal` to `fetch`. Mark `inspect_table` and `get_rules` with `readOnlyHint`. Mark host-authored contract text (name, objective, win condition, note) with `untrustedContentHint` wherever a tool returns it. Keep within Chrome's recommended budgets: 30 characters per tool and parameter name, 500 per tool description, 150 per parameter description, 1.5K per tool output.[ ](https://developer.chrome.com/docs/ai/webmcp/imperative-api)[ ](https://developer.chrome.com/docs/ai/webmcp/secure-tools)
+HTTP surface:
 
-The Go Fish adapter atomically handles a rank request, matching-card transfer or draw, automatic books, and turn advancement in a single action, following the rules pinned above.
+- `POST /api/rooms`
+- `POST /api/rooms/:roomId/redeem`
+- `GET /api/rooms/:roomId/view`
+- `POST /api/rooms/:roomId/actions`
+- `GET /api/rooms/:roomId/socket`
+
+## Browser-native WebMCP
+
+Register through `document.modelContext`, guarded by feature detection and scoped with an `AbortController`.
+
+Lobby:
+
+- `draft_table`
+- `start_table`
+
+Table, filtered by `allowedActions`:
+
+- `inspect_table`
+- `deal_cards`
+- `draw_cards`
+- `move_cards`
+- `give_cards`
+- `reveal_cards`
+- `shuffle_pile`
+- `announce`
+- `react`
+- `end_turn`
+
+Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations use accurate read-only/destructive annotations where supported. Any result containing the game brief or announcements carries `untrustedContentHint`.
+
+## Security and privacy
+
+- Room-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies authenticate seats.
+- Session and invite values are stored only as hashes.
+- Invite tokens are never placed in query strings or server logs.
+- Logs contain request metadata only—never bodies, prompts, announcements, cards, cookies, or tokens.
+- Opponent card IDs and faces never appear in another seat's HTTP, WebSocket, DOM, or WebMCP projection.
+- Player-authored text does not influence authorization, tool registration, reducer rules, network destinations, or secret access.
 
 ## Verification and delivery
 
-- Unit-test shuffling, ownership, card conservation, zone visibility, stale revisions, idempotency, turn permissions, manual-mode permissiveness, books, empty stock, empty-hand draws, and Go Fish completion.
-- Test seat projection explicitly. No serialized response for one seat may contain the opponent's card IDs, ranks, or suits, and no face-down public card may serialize rank or suit for anyone.
-- Test the Durable Object with `@cloudflare/vitest-pool-workers`, including concurrent actions, reconnects and revision resync, hibernation attachments, invite redemption (including double redemption), expiry, and house-player alarm turns.
-- Mock `document.modelContext` to test schemas, annotations, registration cleanup, cancellation, and parity between direct UI and WebMCP actions.
-- Run browser acceptance in ChatGPT's in-app browser and Chrome with WebMCP enabled:
-  - Discover the expected lobby tools.
-  - Draft and start a table through an agent, confirming room creation blocks until the human approves.
-  - Complete a Go Fish turn through `inspect_table` and `request_rank`.
-  - Verify the visible UI and WebSocket event log update.
-  - Join a second browser through the invite URL and verify private-hand isolation.
-  - Verify the site remains playable when WebMCP is unavailable.
-- Include a small prompt evaluation set covering direct requests, ambiguous strategic instructions, incorrect game assumptions, and attempts to reveal the opponent's hand.
-- Deploy the SPA and Worker together on `workers.dev`, then test the exact production URL.
-- Publish the complete source under MIT with locally generated card visuals and no third-party branded assets. Avoiding Magic removes the fan-content and asset-licensing conflict identified in Wizards' policy.[ ](https://company.wizards.com/en/legal/fancontentpolicy)
-- Record a sub-three-minute demo:
-  1. Start practice Go Fish.
-  2. Ask the agent to inspect the hand and play one turn.
-  3. Show the tool calls updating the table.
-  4. Show a second invited player receiving the update live.
-  5. Briefly show the public repository and WebMCP registration.
-- Do not depend on Codex subagents, another live participant, random matchmaking, a server-side model, arbitrary chat, more than two seats, Magic content, deck construction, or comprehensive game-rule enforcement. (Free play validates ownership, zones, and turns — it does not referee whether a move is "legal" in the players' chosen game.)
+- Unit-test contracts, prompt/message bounds, card conservation, authorization, revisions, idempotency, ownership, visibility, zones, turns, shuffling, and preset validity.
+- Integration-test creation, one-use invitations, room cookie isolation, stale and duplicate actions, WebSocket snapshots/updates, hibernation attachments, expiry, and per-seat projections.
+- Test lobby approval, cancellation forwarding, contract-filtered tool registration, structured results, and UI/tool parity.
+- Browser-test preset selection, visible drafting, approval/decline, creation, invite copy, Codex handoff copy, announcement UI, actual WebMCP registry contents, tool execution, refresh recovery, responsive layout, and accessibility.
+- Run lint, type checking, unit tests, Worker tests, production build, and `wrangler deploy --dry-run` before delivery.
+- Publish the MIT-licensed repository and deploy the exact source to `webmcp-card-table`.
+- Configure Cloudflare Workers Builds against the public repository and remove redundant GitHub Actions only after a successful Cloudflare build is confirmed.
 
-## Build order
+## Explicitly out of scope
 
-1. **Day 1 — Foundation.** Scaffold Worker, Durable Object, and SPA; room creation, seat cookies, invite redemption; snapshot persistence and the action envelope (`actionId`, `expectedRevision`).
-2. **Day 2 — Generic engine.** Zones, all generic actions, seat-scoped projections, WebSocket broadcast and resync; the bulk of the unit tests.
-3. **Day 3 — Go Fish.** Adapter, house player with alarm pacing, practice-mode UI and event log.
-4. **Day 4 — WebMCP and free play.** Tool registration and lifecycle, lobby draft/approve flow, free-play UI polish, Durable Object tests.
-5. **Day 5 — Acceptance and delivery.** Browser acceptance runs, prompt evals, production deploy, README, demo video. Treat day 5 as the buffer; cut the `react` action and free-play polish first if behind.
-
-## Assumptions
-
-- Build budget is four to five focused days.
-- The current repository contains only planning documents — no application code and no initialized Devpost workflow.
-- `webmcp-card-table` is the internal package name only. The user will choose the public project name before submission.
-- The official target remains one deployed open-source web product with a public repository and live browser-native WebMCP tools.[ ](https://webmcp.devpost.com/)
+- A Go Fish bot or game-specific transaction engine
+- Comprehensive legality enforcement for arbitrary games
+- Random matchmaking
+- More than two seats
+- General chat
+- Magic: The Gathering rules, assets, or deck construction
+- A server-side model or model API key
+- Devpost submission itself
