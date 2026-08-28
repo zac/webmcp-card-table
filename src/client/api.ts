@@ -2,9 +2,8 @@ import type { ActionEnvelope, GameContract, TableView } from "../shared";
 
 export interface CreatedRoom {
   roomId: string;
-  mode: "practice" | "free_play";
   view: TableView;
-  inviteUrl?: string;
+  inviteUrl: string;
 }
 
 export class ApiError extends Error {
@@ -14,12 +13,8 @@ export class ApiError extends Error {
   }
 }
 
-export function createPracticeRoom(signal?: AbortSignal): Promise<CreatedRoom> {
-  return requestJson("/api/rooms", { method: "POST", body: JSON.stringify({ mode: "practice" }), signal });
-}
-
-export function createFreePlayRoom(contract: GameContract, signal?: AbortSignal): Promise<CreatedRoom> {
-  return requestJson("/api/rooms", { method: "POST", body: JSON.stringify({ mode: "free_play", contract }), signal });
+export function createRoom(contract: GameContract, signal?: AbortSignal): Promise<CreatedRoom> {
+  return requestJson("/api/rooms", { method: "POST", body: JSON.stringify({ contract }), signal });
 }
 
 export function redeemInvite(roomId: string, inviteToken: string, signal?: AbortSignal): Promise<{ view: TableView }> {
@@ -53,4 +48,3 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   }
   return body as T;
 }
-

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_FREE_PLAY_CONTRACT, type ActionName, type GameContract } from "../shared";
-import { createFreePlayRoom, createPracticeRoom, type CreatedRoom } from "./api";
+import {
+  GAME_PRESETS,
+  type ActionName,
+  type GameContract,
+  type GamePresetId,
+} from "../shared";
+import { createRoom, type CreatedRoom } from "./api";
 import { activeModelContext, registerLobbyTools } from "./webmcp";
 
 interface LobbyProps {
@@ -8,20 +13,23 @@ interface LobbyProps {
 }
 
 const ACTION_OPTIONS: { name: ActionName; label: string }[] = [
-  { name: "deal", label: "Deal to both seats" },
+  { name: "deal", label: "Deal" },
   { name: "draw", label: "Draw" },
   { name: "move", label: "Play to piles" },
   { name: "give", label: "Give cards" },
-  { name: "reveal", label: "Reveal cards" },
-  { name: "shuffle", label: "Shuffle piles" },
+  { name: "reveal", label: "Reveal" },
+  { name: "shuffle", label: "Shuffle" },
+  { name: "announce", label: "Table messages" },
   { name: "react", label: "Reactions" },
-  { name: "end_turn", label: "End turn" },
+  { name: "end_turn", label: "Pass turn" },
 ];
 
+const initialPreset = GAME_PRESETS.find((preset) => preset.id === "go_fish")!;
+
 export function Lobby({ onRoomCreated }: LobbyProps) {
-  const [draft, setDraft] = useState<GameContract>(structuredClone(DEFAULT_FREE_PLAY_CONTRACT));
-  const [showDraft, setShowDraft] = useState(false);
-  const [busy, setBusy] = useState<"practice" | "free_play" | null>(null);
+  const [draft, setDraft] = useState<GameContract>(() => structuredClone(initialPreset.contract));
+  const [selectedPreset, setSelectedPreset] = useState<GamePresetId | null>(initialPreset.id);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const draftRef = useRef(draft);
@@ -38,7 +46,11 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
     const lifecycle = new AbortController();
     registerLobbyTools(context, {
       getDraft: () => draftRef.current,
-      setDraft: (next) => { draftRef.current = next; setDraft(next); setShowDraft(true); },
+      setDraft: (next) => {
+        draftRef.current = next;
+        setDraft(next);
+        setSelectedPreset(null);
+      },
       requestStart: (signal) => new Promise((resolve, reject) => {
         if (signal.aborted) return reject(signal.reason ?? new DOMException("Tool execution cancelled", "AbortError"));
         if (approvalRef.current) return reject(new Error("Another table approval is already pending"));
@@ -56,37 +68,47 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
     return () => lifecycle.abort();
   }, []);
 
-  async function startPractice() {
-    setBusy("practice");
+  function choosePreset(presetId: GamePresetId) {
+    const preset = GAME_PRESETS.find((candidate) => candidate.id === presetId);
+    if (!preset) return;
+    const next = structuredClone(preset.contract);
+    draftRef.current = next;
+    setDraft(next);
+    setSelectedPreset(preset.id);
+  }
+
+  function updateDraft(next: GameContract) {
+    draftRef.current = next;
+    setDraft(next);
+    setSelectedPreset(null);
+  }
+
+  async function startTable(signal?: AbortSignal): Promise<CreatedRoom> {
+    setBusy(true);
     setError(null);
     try {
-      onRoomCreated(await createPracticeRoom());
+      return await createRoom(draftRef.current, signal);
     } catch (reason) {
-      setError(messageFor(reason));
+      if (!signal?.aborted) setError(messageFor(reason));
+      throw reason;
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  async function startFreePlay() {
-    setBusy("free_play");
-    setError(null);
+  async function startFromUi() {
     try {
-      onRoomCreated(await createFreePlayRoom(draft));
-    } catch (reason) {
-      setError(messageFor(reason));
-    } finally {
-      setBusy(null);
+      onRoomCreated(await startTable());
+    } catch {
+      // startTable renders the actionable error.
     }
   }
 
   async function approveAgentStart() {
     const pending = approvalRef.current;
     if (!pending) return;
-    setBusy("free_play");
-    setError(null);
     try {
-      const room = await createFreePlayRoom(draftRef.current, pending.signal);
+      const room = await startTable(pending.signal);
       approvalRef.current = null;
       setApproval(null);
       pending.resolve({ roomId: room.roomId, inviteUrl: room.inviteUrl });
@@ -95,9 +117,6 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
       approvalRef.current = null;
       setApproval(null);
       pending.reject(reason);
-      if (!pending.signal.aborted) setError(messageFor(reason));
-    } finally {
-      setBusy(null);
     }
   }
 
@@ -112,41 +131,61 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
   return (
     <main className="lobby-shell">
       <SiteHeader />
-      <section className="lobby-hero" aria-labelledby="lobby-title">
-        <p className="eyebrow">Two seats. One honest deck.</p>
-        <h1 id="lobby-title">A card table your agent can actually play.</h1>
-        <p className="hero-copy">Coach a browser agent through Go Fish, or open a private table for any game you can play with a standard deck.</p>
-        <div className="hero-actions">
-          <button className="button button-primary" type="button" disabled={busy !== null} onClick={() => void startPractice()}>
-            {busy === "practice" ? "Dealing…" : "Practice Go Fish"}
-          </button>
-          <button className="button button-secondary" type="button" disabled={busy !== null} onClick={() => setShowDraft((value) => !value)}>
-            {showDraft ? "Close table draft" : "Draft a free-play table"}
-          </button>
+      <section className="dealer-station" aria-labelledby="lobby-title">
+        <div className="station-intro">
+          <p className="eyebrow">A standard deck with an agent interface</p>
+          <h1 id="lobby-title">Name the game.<br />Deal in your agent.</h1>
+          <p className="hero-copy">Write the rules in plain language, invite another seat, then play through the same controls available to ChatGPT and Codex.</p>
+          <div className="table-proof" aria-label="Product capabilities">
+            <span>52 opaque cards</span><span>2 private hands</span><span>Live WebMCP tools</span>
+          </div>
         </div>
-        {error && <p className="inline-error" role="alert">{error}</p>}
+
+        <section className="rules-slip" aria-labelledby="rules-title">
+          <div className="slip-heading">
+            <div><p className="eyebrow">New private table</p><h2 id="rules-title">What are we playing?</h2></div>
+            <span className="slip-number">52 / 2</span>
+          </div>
+
+          <div className="preset-rack" aria-label="Suggested games">
+            {GAME_PRESETS.map((preset) => (
+              <button
+                className={selectedPreset === preset.id ? "preset-card selected" : "preset-card"}
+                key={preset.id}
+                type="button"
+                onClick={() => choosePreset(preset.id)}
+                aria-pressed={selectedPreset === preset.id}
+              >
+                <strong>{preset.label}</strong>
+                <span>{preset.description}</span>
+              </button>
+            ))}
+          </div>
+
+          <DraftEditor draft={draft} onChange={updateDraft} />
+          {error && <p className="inline-error" role="alert">{error}</p>}
+          <button className="button button-primary open-table-button" type="button" disabled={busy || !draft.name.trim() || !draft.gamePrompt.trim()} onClick={() => void startFromUi()}>
+            {busy ? "Shuffling…" : "Open table and get invite"}
+          </button>
+          <p className="approval-note">An agent can draft this form, but opening a table always asks you first.</p>
+        </section>
       </section>
 
-      {showDraft ? (
-        <DraftEditor draft={draft} onChange={setDraft} onStart={() => void startFreePlay()} busy={busy === "free_play"} />
-      ) : (
-        <TablePreview />
-      )}
-
       <footer className="lobby-footer">
-        <p>Direct controls and WebMCP tools use the same rules.</p>
-        <a href="https://github.com/zac/webmcp-card-table">Source</a>
+        <p>Direct controls and WebMCP tools share one reducer.</p>
+        <a href="https://github.com/zac/webmcp-card-table">View source</a>
       </footer>
+
       {approval && (
         <div className="approval-backdrop">
           <section className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-description">
             <p className="eyebrow">Agent request</p>
             <h2 id="approval-title">Open this private table?</h2>
-            <p id="approval-description">An agent prepared <strong>{draft.name}</strong> with {draft.startingHandSize} starting cards and {draft.allowedActions.length} allowed actions. Creating it will deal a new randomized deck.</p>
-            <div className="approval-contract"><span>Objective</span><p>{draft.objective}</p><span>Win condition</span><p>{draft.winCondition}</p></div>
+            <p id="approval-description">An agent prepared <strong>{draft.name}</strong> with {draft.startingHandSize} cards per seat. Creating it shuffles a new deck and issues a one-use guest invite.</p>
+            <div className="approval-contract"><span>Game brief</span><p>{draft.gamePrompt}</p></div>
             <div className="approval-actions">
-              <button className="button button-secondary" type="button" disabled={busy !== null} onClick={declineAgentStart}>Decline</button>
-              <button ref={approveButton} className="button button-primary" type="button" disabled={busy !== null} onClick={() => void approveAgentStart()}>{busy === "free_play" ? "Opening…" : "Approve and open"}</button>
+              <button className="button button-secondary" type="button" disabled={busy} onClick={declineAgentStart}>Decline</button>
+              <button ref={approveButton} className="button button-primary" type="button" disabled={busy} onClick={() => void approveAgentStart()}>{busy ? "Opening…" : "Approve and open"}</button>
             </div>
           </section>
         </div>
@@ -157,7 +196,7 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
 
 interface PendingApproval {
   signal: AbortSignal;
-  resolve: (room: { roomId: string; inviteUrl?: string }) => void;
+  resolve: (room: { roomId: string; inviteUrl: string }) => void;
   reject: (reason: unknown) => void;
 }
 
@@ -167,22 +206,12 @@ export function SiteHeader({ onHome }: { onHome?: () => void }) {
       <button className="wordmark" type="button" onClick={onHome} aria-label="Card Table home">
         <span className="suit-mark" aria-hidden="true">♠</span>Card Table
       </button>
-      <span className="status-chip">WebMCP ready</span>
+      <span className="status-chip"><i aria-hidden="true" /> WebMCP ready</span>
     </header>
   );
 }
 
-function TablePreview() {
-  return (
-    <section className="table-preview" aria-label="Table preview">
-      <div className="preview-seat preview-seat-away"><span className="seat-label">House</span><div className="card-stack" aria-hidden="true"><i /><i /><i /></div></div>
-      <div className="dealer-rail"><span>Practice table</span><strong>Your turn</strong><span>7 cards each</span></div>
-      <div className="preview-seat preview-seat-home"><span className="seat-label">You</span><div className="card-fan" aria-hidden="true"><i /><i /><i /><i /><i /></div></div>
-    </section>
-  );
-}
-
-function DraftEditor({ draft, onChange, onStart, busy }: { draft: GameContract; onChange: (draft: GameContract) => void; onStart: () => void; busy: boolean }) {
+function DraftEditor({ draft, onChange }: { draft: GameContract; onChange: (draft: GameContract) => void }) {
   const update = <K extends keyof GameContract>(key: K, value: GameContract[K]) => onChange({ ...draft, [key]: value });
   const discardEnabled = draft.zones.some((zone) => zone.id === "discard");
 
@@ -192,23 +221,19 @@ function DraftEditor({ draft, onChange, onStart, busy }: { draft: GameContract; 
   }
 
   return (
-    <section className="draft-panel" aria-labelledby="draft-title">
-      <div className="draft-heading">
-        <div><p className="eyebrow">Table contract</p><h2 id="draft-title">Set the boundaries</h2></div>
-        <div className="contract-ticket"><span>Seats</span><strong>2 fixed</strong></div>
-      </div>
-      <div className="draft-grid">
-        <label>Game name<input value={draft.name} maxLength={80} onChange={(event) => update("name", event.target.value)} /></label>
-        <label>Objective<input value={draft.objective} maxLength={280} onChange={(event) => update("objective", event.target.value)} /></label>
-        <label>Starting hand<input type="number" min={0} max={13} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
-        <label>Turns<select value={draft.turnOrder} onChange={(event) => update("turnOrder", event.target.value as GameContract["turnOrder"])}><option value="alternating">Alternating</option><option value="manual">Manual</option></select></label>
-        <label className="wide-field">Win condition<input value={draft.winCondition} maxLength={280} onChange={(event) => update("winCondition", event.target.value)} /></label>
-        <label className="wide-field">Optional note<textarea value={draft.note ?? ""} maxLength={280} onChange={(event) => update("note", event.target.value)} /></label>
-      </div>
-      <fieldset className="choice-fieldset"><legend>Public zones</legend><label className="check-choice"><input type="checkbox" checked disabled /> Face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up" }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Face-up discard</label></fieldset>
-      <fieldset className="choice-fieldset"><legend>Allowed actions</legend><div className="choice-row">{ACTION_OPTIONS.map((action) => <label className="check-choice" key={action.name}><input type="checkbox" checked={draft.allowedActions.includes(action.name)} onChange={() => toggleAction(action.name)} /> {action.label}</label>)}</div></fieldset>
-      <div className="draft-summary"><div><span>Current draft</span><strong>{draft.name || "Untitled table"}</strong><small>{draft.startingHandSize} cards · {draft.turnOrder} turns · {draft.allowedActions.length} actions</small></div><button className="button button-primary" type="button" disabled={busy || draft.allowedActions.length === 0} onClick={onStart}>{busy ? "Opening…" : "Open private table"}</button></div>
-    </section>
+    <div className="draft-editor">
+      <label>Game name<input value={draft.name} maxLength={80} onChange={(event) => update("name", event.target.value)} /></label>
+      <label className="prompt-field">Game brief<textarea value={draft.gamePrompt} maxLength={2_000} rows={8} onChange={(event) => update("gamePrompt", event.target.value)} /><small>{draft.gamePrompt.length} / 2,000 · Shared with both seats as untrusted game content</small></label>
+      <details className="advanced-settings">
+        <summary>Advanced table settings <span>{draft.startingHandSize} cards · {draft.turnOrder}</span></summary>
+        <div className="advanced-grid">
+          <label>Starting hand<input type="number" min={0} max={26} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
+          <label>Turn handling<select value={draft.turnOrder} onChange={(event) => update("turnOrder", event.target.value as GameContract["turnOrder"])}><option value="manual">Players manage turns</option><option value="alternating">Table enforces turns</option></select></label>
+        </div>
+        <fieldset className="choice-fieldset"><legend>Public zones</legend><label className="check-choice"><input type="checkbox" checked disabled /> Face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up" }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Face-up discard</label></fieldset>
+        <fieldset className="choice-fieldset"><legend>Allowed actions</legend><div className="choice-row">{ACTION_OPTIONS.map((action) => <label className="check-choice" key={action.name}><input type="checkbox" checked={draft.allowedActions.includes(action.name)} onChange={() => toggleAction(action.name)} /> {action.label}</label>)}</div></fieldset>
+      </details>
+    </div>
   );
 }
 
