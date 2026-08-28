@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+worker-configuration.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
