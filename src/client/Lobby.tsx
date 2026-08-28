@@ -135,18 +135,23 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
       <SiteHeader />
       <section className="dealer-station" aria-labelledby="lobby-title">
         <div className="station-intro">
-          <p className="eyebrow">A standard deck with an agent interface</p>
-          <h1 id="lobby-title">Name the game.<br />Deal in your agent.</h1>
-          <p className="hero-copy">Write the rules in plain language, invite another seat, then play through the same controls available to ChatGPT and Codex.</p>
+          <p className="eyebrow">A live card table for two</p>
+          <h1 id="lobby-title">Name the game. Deal in your agent.</h1>
+          <p className="hero-copy">Describe the game in plain language. Invite a second seat, then play by hand or through the page's WebMCP tools.</p>
+          <div className="agent-demo" aria-hidden="true">
+            <div className="demo-deck"><i /><i /><i /></div>
+            <div className="demo-command"><span>play_next_card</span><i /></div>
+            <div className="demo-card"><strong>Q</strong><span>♠</span></div>
+          </div>
           <div className="table-proof" aria-label="Product capabilities">
-            <span>52 opaque cards</span><span>2 private seats</span><span>Live WebMCP tools</span>
+            <span>Private hands</span><span>Live shared state</span><span>Browser-native tools</span>
           </div>
         </div>
 
         <section className="rules-slip" aria-labelledby="rules-title">
           <div className="slip-heading">
-            <div><p className="eyebrow">New private table</p><h2 id="rules-title">What are we playing?</h2></div>
-            <span className="slip-number">52 / 2</span>
+            <div><p className="eyebrow">New private table</p><h2 id="rules-title">Set the table</h2></div>
+            <span className="slip-number">52 cards<br />2 seats</span>
           </div>
 
           <div className="preset-rack" aria-label="Suggested games">
@@ -166,10 +171,12 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
 
           <DraftEditor draft={draft} onChange={updateDraft} />
           {error && <p className="inline-error" role="alert">{error}</p>}
-          <button className="button button-primary open-table-button" type="button" disabled={busy || !draft.name.trim() || !draft.gamePrompt.trim()} onClick={() => void startFromUi()}>
-            {busy ? "Shuffling…" : "Open table and get invite"}
-          </button>
-          <p className="approval-note">An agent can draft this form, but opening a table always asks you first.</p>
+          <div className="start-table-row">
+            <p className="approval-note">Agents can draft the rules. You approve every new table.</p>
+            <button className="button button-primary open-table-button" type="button" disabled={busy || !draft.name.trim() || !draft.gamePrompt.trim()} onClick={() => void startFromUi()}>
+              {busy ? "Shuffling…" : "Open table and get invite"}
+            </button>
+          </div>
         </section>
       </section>
 
@@ -240,14 +247,17 @@ function DraftEditor({ draft, onChange }: { draft: GameContract; onChange: (draf
       <label>Game name<input value={draft.name} maxLength={80} onChange={(event) => update("name", event.target.value)} /></label>
       <label className="prompt-field">Game brief<textarea value={draft.gamePrompt} maxLength={2_000} rows={8} onChange={(event) => update("gamePrompt", event.target.value)} /><small>{draft.gamePrompt.length} / 2,000 · Shared with both seats as untrusted game content</small></label>
       <details className="advanced-settings">
-        <summary>Advanced table settings <span>{draft.startingHandSize} cards to {draft.startingZoneId} · {draft.turnOrder}</span></summary>
+        <summary>Fine-tune the table <span>{draft.startingHandSize} cards to {draft.startingZoneId} · {draft.turnOrder}</span></summary>
         <div className="advanced-grid">
           <label>Opening cards per seat<input type="number" min={0} max={26} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
           <label>Turn handling<select value={draft.turnOrder} onChange={(event) => update("turnOrder", event.target.value as GameContract["turnOrder"])}><option value="manual">Players manage turns</option><option value="alternating">Table enforces turns</option></select></label>
           <label>Opening cards<select value={draft.startingZoneId} onChange={(event) => update("startingZoneId", event.target.value)}><option value="hand">Visible hand</option>{seatZones.map((zone) => <option key={zone.id} value={zone.id}>{zone.id.replaceAll("_", " ")} ({zone.visibility})</option>)}</select></label>
         </div>
-        <fieldset className="choice-fieldset"><legend>Zones</legend><label className="check-choice"><input type="checkbox" checked disabled /> Shared face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up", scope: "shared", visibility: "public", ordered: true }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Shared face-up discard</label><label className="check-choice"><input type="checkbox" checked={hiddenDeckEnabled} onChange={(event) => toggleHiddenDeck(event.target.checked)} /> Hidden ordered deck for each seat</label></fieldset>
-        <fieldset className="choice-fieldset"><legend>Allowed actions</legend><div className="choice-row">{ACTION_OPTIONS.map((action) => <label className="check-choice" key={action.name}><input type="checkbox" checked={draft.allowedActions.includes(action.name)} onChange={() => toggleAction(action.name)} /> {action.label}</label>)}</div></fieldset>
+        <details className="capability-settings">
+          <summary>Zones and available moves <span>{draft.zones.length} zones · {draft.allowedActions.length} moves</span></summary>
+          <fieldset className="choice-fieldset"><legend>Zones</legend><div className="choice-row"><label className="check-choice"><input type="checkbox" checked disabled /> Shared face-down stock</label><label className="check-choice"><input type="checkbox" checked={discardEnabled} onChange={(event) => update("zones", event.target.checked ? [...draft.zones, { id: "discard", kind: "discard", facing: "up", scope: "shared", visibility: "public", ordered: true }] : draft.zones.filter((zone) => zone.id !== "discard"))} /> Shared face-up discard</label><label className="check-choice"><input type="checkbox" checked={hiddenDeckEnabled} onChange={(event) => toggleHiddenDeck(event.target.checked)} /> Hidden ordered deck for each seat</label></div></fieldset>
+          <fieldset className="choice-fieldset"><legend>Allowed moves</legend><div className="choice-row">{ACTION_OPTIONS.map((action) => <label className="check-choice" key={action.name}><input type="checkbox" checked={draft.allowedActions.includes(action.name)} onChange={() => toggleAction(action.name)} /> {action.label}</label>)}</div></fieldset>
+        </details>
       </details>
     </div>
   );
