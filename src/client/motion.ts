@@ -2,7 +2,7 @@ import type { SeatId, TableEvent, TableView } from "../shared";
 
 export type TableMotion =
   | { key: string; type: "play"; actorSeatId: SeatId; targetZoneId: string; targetSeatId: SeatId | null; cardId: string; face: "up" | "down" }
-  | { key: string; type: "collect"; actorSeatId: SeatId; sourceZoneId: string; sourceSeatId: SeatId | null };
+  | { key: string; type: "collect"; actorSeatId: SeatId; sourceZoneId: string; sourceSeatId: SeatId | null; placement: "top" | "bottom" };
 
 export function motionForEvent(event: TableEvent, view: TableView): TableMotion | null {
   if (!event.actorSeatId) return null;
@@ -32,8 +32,9 @@ export function motionForEvent(event: TableEvent, view: TableView): TableMotion 
   }
   if (event.type === "pile_collected") {
     const sourceZoneId = stringValue(event.data.sourceZoneId);
-    if (!sourceZoneId) return null;
-    return { key: event.id, type: "collect", actorSeatId: event.actorSeatId, sourceZoneId, sourceSeatId: seatValue(event.data.sourceSeatId) };
+    const placement = event.data.placement === "top" || event.data.placement === "bottom" ? event.data.placement : null;
+    if (!sourceZoneId || !placement) return null;
+    return { key: event.id, type: "collect", actorSeatId: event.actorSeatId, sourceZoneId, sourceSeatId: seatValue(event.data.sourceSeatId), placement };
   }
   return null;
 }

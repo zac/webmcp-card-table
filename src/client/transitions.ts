@@ -77,7 +77,7 @@ export function playTableTransition(transition: PendingTableTransition, view: Ta
     return;
   }
 
-  const targetCard = lastCard(targetZone);
+  const targetCard = motion.placement === "bottom" ? firstCard(targetZone) : lastCard(targetZone);
   const targetRect = targetCard?.getBoundingClientRect() ?? targetZone.getBoundingClientRect();
   transition.cards.forEach((card, index) => moveCollectedCard(card, targetRect, index, transition.cards.length));
 }
@@ -156,6 +156,10 @@ function findCard(zone: HTMLElement | null, cardId: string): HTMLElement | null 
 
 function lastCard(zone: HTMLElement | null): HTMLElement | null {
   return [...(zone?.querySelectorAll<HTMLElement>("[data-card-visual]") ?? [])].at(-1) ?? null;
+}
+
+function firstCard(zone: HTMLElement | null): HTMLElement | null {
+  return zone?.querySelector<HTMLElement>("[data-card-visual]") ?? null;
 }
 
 function stringValue(value: TableEvent["data"][string]): string | null {

@@ -43,13 +43,15 @@ describe("table motion cues", () => {
     });
   });
 
-  it("keeps the owner of the pile being collected", () => {
-    expect(motionForEvent(event("pile_collected", { sourceZoneId: "battle", sourceSeatId: "guest", targetZoneId: "deck", count: 2 }), view)).toMatchObject({
+  it("keeps the owner and insertion edge of the pile being collected", () => {
+    expect(motionForEvent(event("pile_collected", { sourceZoneId: "battle", sourceSeatId: "guest", targetZoneId: "deck", placement: "bottom", count: 2 }), view)).toMatchObject({
       type: "collect",
       actorSeatId: "host",
       sourceZoneId: "battle",
       sourceSeatId: "guest",
+      placement: "bottom",
     });
+    expect(motionForEvent(event("pile_collected", { sourceZoneId: "battle", sourceSeatId: "host", targetZoneId: "deck", placement: "top", count: 1 }), view)).toMatchObject({ placement: "top" });
   });
 
   it("ignores non-card and table-authored events", () => {
