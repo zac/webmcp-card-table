@@ -1,13 +1,13 @@
 import { env, exports } from "cloudflare:workers";
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FREE_PLAY_CONTRACT, type TableState } from "../shared";
+import { DEFAULT_FREE_PLAY_CONTRACT, GAME_PRESETS, type GameContract, type TableState } from "../shared";
 import { GameRoom } from "./game-room";
 
-function createInput(roomId: string) {
+function createInput(roomId: string, contract: GameContract = DEFAULT_FREE_PLAY_CONTRACT) {
   return {
     roomId,
-    contract: DEFAULT_FREE_PLAY_CONTRACT,
+    contract,
     seatIds: ["host", "guest"] as ["host", "guest"],
     hostSessionHash: "aG9zdA",
     inviteHash: "aW52aXRl",
@@ -41,6 +41,15 @@ describe("GameRoom", () => {
     const repeated = await stub.redeemInvite("aW52aXRl", "YW5vdGhlcg", Date.now());
     expect(repeated.ok).toBe(false);
     if (!repeated.ok) expect(repeated.error.code).toBe("invite_used");
+  });
+
+  it("removes the retired pass action from persisted shipped War contracts", async () => {
+    const stub = env.GAME_ROOM.getByName("legacy-war-room");
+    const currentWar = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
+    const legacyWar = { ...currentWar, allowedActions: [...currentWar.allowedActions, "end_turn" as const] };
+    await stub.createRoom(createInput("legacy-war-room", legacyWar));
+    const reloaded = await stub.getView("aG9zdA", "host");
+    expect(reloaded.ok && reloaded.value.contract.allowedActions).not.toContain("end_turn");
   });
 
   it("persists accepted actions and rejects duplicate IDs", async () => {

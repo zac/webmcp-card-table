@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import {
   applyAction,
   createTable,
+  GAME_PRESETS,
   GameError,
   projectTable,
   recordSeatJoined,
@@ -33,6 +34,7 @@ interface RpcError {
 }
 
 const MAX_REPLAY_REVISIONS = 250;
+const WAR_PRESET = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
 
 export type RpcResult<T> = { ok: true; value: T } | { ok: false; error: RpcError };
 
@@ -365,27 +367,36 @@ interface LegacyTableState extends Omit<TableState, "schemaVersion" | "contract"
 }
 
 function normalizeState(state: TableState | LegacyTableState): TableState {
-  if (state.schemaVersion === 2) return state;
-  return {
-    ...state,
-    schemaVersion: 2,
-    contract: {
-      ...state.contract,
-      startingZoneId: "hand",
-      zones: state.contract.zones.map((zone) => ({
+  const normalized: TableState = state.schemaVersion === 2 ? state : {
+      ...state,
+      schemaVersion: 2,
+      contract: {
+        ...state.contract,
+        startingZoneId: "hand",
+        zones: state.contract.zones.map((zone) => ({
+          ...zone,
+          scope: "shared",
+          visibility: "public",
+          ordered: true,
+        })),
+      },
+      zones: state.zones.map((zone) => ({
         ...zone,
         scope: "shared",
         visibility: "public",
         ordered: true,
+        ownerSeatId: null,
       })),
+    };
+  if (normalized.contract.gamePrompt !== WAR_PRESET.gamePrompt || !normalized.contract.allowedActions.includes("end_turn")) {
+    return normalized;
+  }
+  return {
+    ...normalized,
+    contract: {
+      ...normalized.contract,
+      allowedActions: normalized.contract.allowedActions.filter((action) => action !== "end_turn"),
     },
-    zones: state.zones.map((zone) => ({
-      ...zone,
-      scope: "shared",
-      visibility: "public",
-      ordered: true,
-      ownerSeatId: null,
-    })),
   };
 }
 
