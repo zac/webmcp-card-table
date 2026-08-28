@@ -2,6 +2,8 @@
 
 Card Table is a two-seat playing-card product built for the [WebMCP Challenge](https://webmcp.devpost.com/). A human can play every action through the interface, or let a browser agent use the equivalent browser-native WebMCP tools.
 
+[Open the live table](https://webmcp-card-table.zacwhite.workers.dev/) · [Browse the source](https://github.com/zac/webmcp-card-table)
+
 It includes:
 
 - deterministic single-player Go Fish against a house player
