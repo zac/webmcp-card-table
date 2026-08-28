@@ -79,7 +79,7 @@ export function playTableTransition(transition: PendingTableTransition, view: Ta
 
   const targetCard = motion.placement === "bottom" ? firstCard(targetZone) : lastCard(targetZone);
   const targetRect = targetCard?.getBoundingClientRect() ?? targetZone.getBoundingClientRect();
-  const destinationCover = coverDestinationCards(targetZone, transition.cards.length);
+  const destinationCover = motion.placement === "bottom" ? coverDestinationCards(targetZone, transition.cards.length) : [];
   const movements = transition.cards.map((card, index) => moveCollectedCard(card, targetRect, index, transition.cards.length));
   void Promise.all(movements).finally(() => destinationCover.forEach((card) => card.remove()));
 }
