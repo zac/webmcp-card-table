@@ -21,6 +21,7 @@ Success means a judge can open the live URL, choose or write a game, approve roo
 - The guest redeems the token once; the fragment is immediately cleared.
 - The table includes private hands, owner-visible or fully hidden personal piles, shared piles, turn/connection state, the game brief, direct controls, fixed reactions, and a structured event log.
 - A bounded 160-character `announce` operation lets players make in-game requests and declarations. It is public, rendered as text, retained only in bounded room history, and treated as untrusted content.
+- The host can end the game through a confirmation dialog. This freezes the room rather than deleting it, keeps the final table visible to both seats, and turns the side panel into a read-only revision replay.
 
 ## Shared contract and reducer
 
@@ -53,7 +54,7 @@ type ActionName =
 
 - Vite, React, and TypeScript SPA served through Worker Static Assets.
 - One SQLite-backed `GameRoom` Durable Object per room, addressed by room ID.
-- SQLite stores the versioned snapshot, event history, hashed sessions, hashed invitation, and redemption state.
+- SQLite stores the current snapshot, up to 250 replay snapshots plus the opening state, event history, hashed sessions, hashed invitation, and redemption state.
 - Critical state is persisted before any WebSocket broadcast.
 - Hibernatable WebSockets store only seat and last-revision attachments.
 - A single Durable Object alarm expires the room 24 hours after its latest accepted action.
@@ -64,6 +65,7 @@ HTTP surface:
 - `POST /api/rooms`
 - `POST /api/rooms/:roomId/redeem`
 - `GET /api/rooms/:roomId/view`
+- `GET /api/rooms/:roomId/replay?revision=:revision`
 - `POST /api/rooms/:roomId/actions`
 - `GET /api/rooms/:roomId/socket`
 
@@ -90,8 +92,9 @@ Table, filtered by `allowedActions`:
 - `announce`
 - `react`
 - `end_turn`
+- `finish_table` (host only; confirmation-gated)
 
-Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations use accurate read-only/destructive annotations where supported. Any result containing the game brief or announcements carries `untrustedContentHint`.
+Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations use accurate read-only/destructive annotations where supported. `finish_table` is destructive and waits for the same human confirmation as the direct host control. Once finished, only `inspect_table` remains registered. Any result containing the game brief or announcements carries `untrustedContentHint`.
 
 ## Security and privacy
 
@@ -106,7 +109,7 @@ Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations
 ## Verification and delivery
 
 - Unit-test contracts, prompt/message bounds, card conservation, authorization, revisions, idempotency, ownership, visibility, hidden ordered zones, next-card play, pile collection, turns, shuffling, and preset validity.
-- Integration-test creation, one-use invitations, two seats sharing one cookie jar, stale and duplicate actions, WebSocket snapshots/updates, hibernation attachments, expiry, and per-seat projections.
+- Integration-test creation, one-use invitations, two seats sharing one cookie jar, stale and duplicate actions, WebSocket snapshots/updates, hibernation attachments, expiry, host-only completion, and live plus replay per-seat projections.
 - Test lobby approval, cancellation forwarding, contract-filtered tool registration, structured results, and UI/tool parity.
 - Browser-test preset selection, visible drafting, approval/decline, creation, invite copy, two Codex tabs sharing cookies, announcement UI, hidden deck rendering, next-card play, pile collection, actual WebMCP registry contents, refresh recovery, responsive layout, and accessibility.
 - Run lint, type checking, unit tests, Worker tests, production build, and `wrangler deploy --dry-run` before delivery.

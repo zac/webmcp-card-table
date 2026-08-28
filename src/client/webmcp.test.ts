@@ -58,14 +58,18 @@ describe("WebMCP table tools", () => {
     const { context, tools } = registry();
     let current = view();
     const executeAction = vi.fn(async () => ({ ...current, revision: 4 }));
-    registerTableTools(context, { getView: () => current, executeAction }, new AbortController().signal);
+    const requestFinish = vi.fn(async () => ({ ...current, revision: 4, status: "finished" as const }));
+    registerTableTools(context, { getView: () => current, executeAction, requestFinish }, new AbortController().signal);
 
-    expect([...tools.keys()].sort()).toEqual(["announce", "collect_pile", "deal_cards", "draw_cards", "end_turn", "give_cards", "inspect_table", "move_cards", "play_next_card", "react", "reveal_cards", "shuffle_pile"]);
+    expect([...tools.keys()].sort()).toEqual(["announce", "collect_pile", "deal_cards", "draw_cards", "end_turn", "finish_table", "give_cards", "inspect_table", "move_cards", "play_next_card", "react", "reveal_cards", "shuffle_pile"]);
     expect(tools.get("inspect_table")?.annotations?.readOnlyHint).toBe(true);
     expect(tools.get("announce")?.annotations).toMatchObject({ destructiveHint: false, untrustedContentHint: true });
     const execution = new AbortController();
     await tools.get("draw_cards")!.execute({ zoneId: "stock", count: 2 }, { signal: execution.signal });
     expect(executeAction).toHaveBeenCalledWith({ type: "draw", zoneId: "stock", count: 2 }, execution.signal);
+    await tools.get("finish_table")!.execute({}, { signal: execution.signal });
+    expect(requestFinish).toHaveBeenCalledWith(execution.signal);
+    expect(tools.get("finish_table")?.annotations).toMatchObject({ destructiveHint: true, untrustedContentHint: false });
     current = { ...current, revision: 5 };
   });
 
@@ -73,8 +77,8 @@ describe("WebMCP table tools", () => {
     const { context, tools } = registry();
     const current = view();
     current.contract = { ...current.contract, allowedActions: ["announce", "reveal"] };
-    registerTableTools(context, { getView: () => current, executeAction: vi.fn() }, new AbortController().signal);
-    expect([...tools.keys()].sort()).toEqual(["announce", "inspect_table", "reveal_cards"]);
+    registerTableTools(context, { getView: () => current, executeAction: vi.fn(), requestFinish: vi.fn() }, new AbortController().signal);
+    expect([...tools.keys()].sort()).toEqual(["announce", "finish_table", "inspect_table", "reveal_cards"]);
     expect(tools.has("end_turn")).toBe(false);
     expect(tools.has("draw_cards")).toBe(false);
   });
@@ -87,9 +91,23 @@ describe("WebMCP table tools", () => {
     current.opponent.zones = [{ zoneId: "deck", kind: "pile", ordered: true, cardCount: 26 }];
     current.publicZones.push({ zoneId: "battle", kind: "pile", ordered: true, cardCount: 0, cards: [] });
     const executeAction = vi.fn(async () => ({ ...current, revision: 4 }));
-    registerTableTools(context, { getView: () => current, executeAction }, new AbortController().signal);
-    expect([...tools.keys()].sort()).toEqual(["collect_pile", "inspect_table", "play_next_card"]);
+    registerTableTools(context, { getView: () => current, executeAction, requestFinish: vi.fn() }, new AbortController().signal);
+    expect([...tools.keys()].sort()).toEqual(["collect_pile", "finish_table", "inspect_table", "play_next_card"]);
     await tools.get("play_next_card")!.execute({ sourceZoneId: "deck", targetZoneId: "battle", face: "up" });
     expect(executeAction).toHaveBeenCalledWith({ type: "play_next", sourceZoneId: "deck", targetZoneId: "battle", face: "up" }, expect.any(AbortSignal));
+  });
+
+  it("keeps finish host-only and exposes only inspection after a game ends", () => {
+    const guestRegistry = registry();
+    const guest = view();
+    guest.self.seatId = "guest";
+    guest.opponent.seatId = "host";
+    registerTableTools(guestRegistry.context, { getView: () => guest, executeAction: vi.fn(), requestFinish: vi.fn() }, new AbortController().signal);
+    expect(guestRegistry.tools.has("finish_table")).toBe(false);
+
+    const finishedRegistry = registry();
+    const finished = { ...view(), status: "finished" as const, activeSeatId: null };
+    registerTableTools(finishedRegistry.context, { getView: () => finished, executeAction: vi.fn(), requestFinish: vi.fn() }, new AbortController().signal);
+    expect([...finishedRegistry.tools.keys()]).toEqual(["inspect_table"]);
   });
 });

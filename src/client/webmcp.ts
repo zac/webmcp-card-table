@@ -53,6 +53,7 @@ export interface LobbyToolHandlers {
 export interface TableToolHandlers {
   getView: () => TableView;
   executeAction: (action: TableAction, signal: AbortSignal) => Promise<TableView>;
+  requestFinish: (signal: AbortSignal) => Promise<TableView>;
 }
 
 const stringArray = (values: readonly string[]): JsonSchema => ({ type: "array", minItems: 1, maxItems: 13, uniqueItems: true, items: { type: "string", enum: values } });
@@ -135,6 +136,19 @@ export function registerTableTools(context: WebMcpContext, handlers: TableToolHa
     annotations: { readOnlyHint: true, destructiveHint: false, untrustedContentHint: true },
     execute: () => bounded(viewSummary(handlers.getView())),
   });
+
+  if (view.status !== "active") return;
+
+  if (view.self.seatId === "host") {
+    register(context, signal, {
+      name: "finish_table",
+      title: "End the game",
+      description: "Ask the host to confirm freezing the table. If approved, no further game actions are accepted and the final state remains available for replay.",
+      inputSchema: emptySchema(),
+      annotations: { readOnlyHint: false, destructiveHint: true, untrustedContentHint: false },
+      execute: async (_input, execution) => bounded(viewSummary(await handlers.requestFinish(toolSignal(execution)))),
+    });
+  }
 
   const allowed = new Set(view.contract.allowedActions);
   if (allowed.has("deal")) registerAction(context, signal, handlers, "deal_cards", "Deal cards", "Deal the same number of cards from a public pile to each seat.", {

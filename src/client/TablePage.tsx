@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Reaction, SeatId, TableAction, TableEvent, TableView } from "../shared";
-import { ApiError, fetchTable, redeemInvite, rememberSeat, seatForRoom, submitTableAction } from "./api";
+import type { Reaction, RoomReplay, SeatId, TableAction, TableEvent, TableView } from "../shared";
+import { ApiError, fetchTable, fetchTableReplay, redeemInvite, rememberSeat, seatForRoom, submitTableAction } from "./api";
 import { PlayingCard } from "./Card";
 import { SiteHeader } from "./Lobby";
 import { activeModelContext, registerTableTools } from "./webmcp";
@@ -22,6 +22,12 @@ const REACTION_BUTTONS: { value: Reaction; label: string }[] = [
 
 type ActiveZone = { scope: "public" | "self"; zoneId: string } | null;
 
+interface PendingFinishApproval {
+  signal?: AbortSignal;
+  resolve?: (view: TableView) => void;
+  reject?: (reason: unknown) => void;
+}
+
 export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageProps) {
   const [view, setView] = useState<TableView | null>(initialView ?? null);
   const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
@@ -29,16 +35,23 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
   const [busy, setBusy] = useState(false);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [activeZone, setActiveZone] = useState<ActiveZone>(null);
+  const [finishApproval, setFinishApproval] = useState<PendingFinishApproval | null>(null);
+  const [replay, setReplay] = useState<RoomReplay | null>(null);
+  const [replayBusy, setReplayBusy] = useState(false);
   const [knownInviteUrl] = useState(inviteUrl);
   const loaded = useRef(false);
   const revision = useRef(initialView?.revision ?? 0);
   const viewRef = useRef<TableView | null>(initialView ?? null);
   const busyRef = useRef(false);
+  const finishApprovalRef = useRef<PendingFinishApproval | null>(null);
+  const confirmFinishButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     revision.current = view?.revision ?? revision.current;
     viewRef.current = view;
   }, [view]);
+  useEffect(() => { finishApprovalRef.current = finishApproval; }, [finishApproval]);
+  useEffect(() => { if (finishApproval) confirmFinishButton.current?.focus(); }, [finishApproval]);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -148,7 +161,51 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
     }
   }, [executeAction]);
 
-  const toolSetKey = view ? view.contract.allowedActions.join(",") : "loading";
+  const requestFinish = useCallback((signal: AbortSignal): Promise<TableView> => new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason ?? new DOMException("Tool execution cancelled", "AbortError"));
+    if (finishApprovalRef.current) return reject(new Error("Another end-game confirmation is already pending"));
+    const pending: PendingFinishApproval = { signal, resolve, reject };
+    finishApprovalRef.current = pending;
+    setFinishApproval(pending);
+    signal.addEventListener("abort", () => {
+      if (finishApprovalRef.current !== pending) return;
+      finishApprovalRef.current = null;
+      setFinishApproval(null);
+      reject(signal.reason ?? new DOMException("Tool execution cancelled", "AbortError"));
+    }, { once: true });
+  }), []);
+
+  const requestFinishFromUi = useCallback(() => {
+    if (finishApprovalRef.current) return;
+    const pending: PendingFinishApproval = {};
+    finishApprovalRef.current = pending;
+    setFinishApproval(pending);
+  }, []);
+
+  const approveFinish = useCallback(async () => {
+    const pending = finishApprovalRef.current;
+    if (!pending) return;
+    try {
+      const finished = await executeAction({ type: "finish_game" }, pending.signal);
+      finishApprovalRef.current = null;
+      setFinishApproval(null);
+      pending.resolve?.(finished);
+    } catch (reason) {
+      finishApprovalRef.current = null;
+      setFinishApproval(null);
+      pending.reject?.(reason);
+    }
+  }, [executeAction]);
+
+  const declineFinish = useCallback(() => {
+    const pending = finishApprovalRef.current;
+    if (!pending) return;
+    finishApprovalRef.current = null;
+    setFinishApproval(null);
+    pending.reject?.(new Error("The host kept the game open"));
+  }, []);
+
+  const toolSetKey = view ? `${view.status}:${view.self.seatId}:${view.contract.allowedActions.join(",")}` : "loading";
   useEffect(() => {
     if (!viewRef.current) return;
     const context = activeModelContext();
@@ -161,9 +218,30 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
         return current;
       },
       executeAction,
+      requestFinish,
     }, lifecycle.signal);
     return () => lifecycle.abort();
-  }, [executeAction, toolSetKey]);
+  }, [executeAction, requestFinish, toolSetKey]);
+
+  useEffect(() => {
+    if (view?.status !== "finished") {
+      setReplay(null);
+      return;
+    }
+    const controller = new AbortController();
+    setReplayBusy(true);
+    fetchTableReplay(roomId, undefined, controller.signal)
+      .then(setReplay)
+      .catch((reason) => { if (!controller.signal.aborted) setError(messageFor(reason)); })
+      .finally(() => { if (!controller.signal.aborted) setReplayBusy(false); });
+    return () => controller.abort();
+  }, [roomId, view?.status, view?.revision]);
+
+  useEffect(() => {
+    if (view?.status === "active") return;
+    setActiveZone(null);
+    setSelectedCards([]);
+  }, [view?.status]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -177,17 +255,31 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
     return <main className="table-shell"><SiteHeader onHome={onHome} /><section className="loading-table"><div className="deck-loader" /><h1>Finding your seat…</h1>{error && <p className="inline-error" role="alert">{error}</p>}</section></main>;
   }
 
-  const ownTurn = view.contract.turnOrder === "manual" || view.activeSeatId === view.self.seatId;
+  const interactive = view.status === "active";
+  const ownTurn = interactive && (view.contract.turnOrder === "manual" || view.activeSeatId === view.self.seatId);
+  const displayView = replay?.view ?? view;
   const cleanTableUrl = `${window.location.origin}/table/${roomId}`;
   const toggleCard = (cardId: string) => setSelectedCards((current) => current.includes(cardId) ? current.filter((id) => id !== cardId) : [...current, cardId]);
+
+  async function showRevision(nextRevision: number) {
+    setReplayBusy(true);
+    setError(null);
+    try {
+      setReplay(await fetchTableReplay(roomId, nextRevision));
+    } catch (reason) {
+      setError(messageFor(reason));
+    } finally {
+      setReplayBusy(false);
+    }
+  }
 
   return (
     <main className="table-shell">
       <SiteHeader onHome={onHome} />
       <section className="table-topbar">
-        <div><p className="eyebrow">Private prompt-defined table</p><h1>{view.contract.name}</h1></div>
+        <div><p className="eyebrow">{interactive ? "Private prompt-defined table" : "Finished private table"}</p><h1>{view.contract.name}</h1></div>
         <div className="table-top-actions">
-          <div className="table-meta"><span className={`connection-dot ${connection}`} />{connection}<span>Revision {view.revision}</span></div>
+          <div className="table-meta"><span className={`connection-dot ${connection}`} />{connection}<span>{interactive ? `Revision ${view.revision}` : `Replay R${displayView.revision} of R${view.revision}`}</span></div>
           <div className="handoff-actions">
             {knownInviteUrl && <CopyButton label="Copy invite" copiedLabel="Invite copied" text={knownInviteUrl} />}
             {knownInviteUrl && <CopyButton label="Guest Codex prompt" copiedLabel="Guest prompt copied" text={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
@@ -197,17 +289,18 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       </section>
 
       <section className="game-layout">
-        <div className="game-surface" onClick={() => setActiveZone(null)}>
-          <OpponentSeat opponent={view.opponent} />
-          <div className="live-dealer-rail"><span>{view.publicZones.find((zone) => zone.kind === "stock")?.cardCount ?? 0} in stock</span><strong>{turnLabel(view)}</strong><span>{view.contract.turnOrder} turns</span></div>
+        <div className={`game-surface${interactive ? "" : " game-finished"}${displayView.revision !== view.revision ? " replaying" : ""}`} onClick={() => setActiveZone(null)}>
+          <OpponentSeat opponent={displayView.opponent} />
+          <div className="live-dealer-rail"><span>{displayView.publicZones.find((zone) => zone.kind === "stock")?.cardCount ?? 0} in stock</span><strong>{interactive ? turnLabel(view) : displayView.revision === view.revision ? "Game over" : `Replay · R${displayView.revision}`}</strong><span>{displayView.contract.turnOrder} turns</span></div>
           <div className="public-zones">
-            {view.publicZones.map((zone) => (
+            {displayView.publicZones.map((zone) => (
               <PublicZone
                 key={zone.zoneId}
                 zone={zone}
-                view={view}
+                view={displayView}
                 selectedCards={selectedCards}
-                active={activeZone?.scope === "public" && activeZone.zoneId === zone.zoneId}
+                interactive={interactive}
+                active={interactive && activeZone?.scope === "public" && activeZone.zoneId === zone.zoneId}
                 disabled={!ownTurn || busy}
                 onToggle={() => setActiveZone((current) => current?.scope === "public" && current.zoneId === zone.zoneId ? null : { scope: "public", zoneId: zone.zoneId })}
                 onAction={(action) => void act(action)}
@@ -215,9 +308,10 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
             ))}
           </div>
           <SelfSeat
-            view={view}
+            view={displayView}
             selectedCards={selectedCards}
             activeZone={activeZone}
+            interactive={interactive}
             disabled={!ownTurn || busy}
             onToggleCard={toggleCard}
             onClearSelection={() => setSelectedCards([])}
@@ -227,31 +321,68 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
         </div>
 
         <aside className="control-rail">
-          <TurnCard view={view} ownTurn={ownTurn} busy={busy} onAction={(action) => void act(action)} />
-          <MessageControls enabled={view.contract.allowedActions.includes("announce")} busy={busy || !ownTurn} onAction={(action) => void act(action)} />
-          <ReactionControls enabled={view.contract.allowedActions.includes("react")} busy={busy || !ownTurn} onAction={(action) => void act(action)} />
+          <TurnCard view={view} ownTurn={ownTurn} busy={busy} onAction={(action) => void act(action)} onRequestFinish={requestFinishFromUi} />
+          {!interactive && replay && <ReplayControls replay={replay} busy={replayBusy} onSelect={(nextRevision) => void showRevision(nextRevision)} />}
+          {interactive && <MessageControls enabled={view.contract.allowedActions.includes("announce")} busy={busy || !ownTurn} onAction={(action) => void act(action)} />}
+          {interactive && <ReactionControls enabled={view.contract.allowedActions.includes("react")} busy={busy || !ownTurn} onAction={(action) => void act(action)} />}
           {error && <p className="inline-error compact-error" role="alert">{error}</p>}
-          <EventLog events={view.recentEvents} selfSeatId={view.self.seatId} />
+          <EventLog events={displayView.recentEvents} selfSeatId={view.self.seatId} />
         </aside>
       </section>
+
+      {finishApproval && (
+        <div className="approval-backdrop">
+          <section className="approval-dialog finish-dialog" role="dialog" aria-modal="true" aria-labelledby="finish-title" aria-describedby="finish-description">
+            <p className="eyebrow">Host decision</p>
+            <h2 id="finish-title">End this game?</h2>
+            <p id="finish-description">This freezes the table for both seats. No more cards can move, but the final state and recorded replay remain available until the room expires. This cannot be undone.</p>
+            <div className="approval-contract finish-summary"><span>Final record</span><p>Revision {view.revision} · {view.recentEvents.length} logged events</p></div>
+            <div className="approval-actions">
+              <button className="button button-secondary" type="button" disabled={busy} onClick={declineFinish}>Keep playing</button>
+              <button ref={confirmFinishButton} className="button button-danger" type="button" disabled={busy} onClick={() => void approveFinish()}>{busy ? "Ending…" : "End game"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
 
-function TurnCard({ view, ownTurn, busy, onAction }: { view: TableView; ownTurn: boolean; busy: boolean; onAction: (action: TableAction) => void }) {
+function TurnCard({ view, ownTurn, busy, onAction, onRequestFinish }: { view: TableView; ownTurn: boolean; busy: boolean; onAction: (action: TableAction) => void; onRequestFinish: () => void }) {
+  const finished = view.status === "finished";
   return (
-    <section className="turn-card">
-      <span>{ownTurn ? "Action open" : "Waiting"}</span>
-      <strong>{ownTurn ? "Your move" : `${view.activeSeatId} is playing`}</strong>
+    <section className={`turn-card${finished ? " finished-turn-card" : ""}`}>
+      <span>{finished ? "Table closed" : ownTurn ? "Action open" : "Waiting"}</span>
+      <strong>{finished ? "Game ended" : ownTurn ? "Your move" : `${view.activeSeatId} is playing`}</strong>
       <details className="game-brief">
         <summary>Game brief</summary>
         <p>{view.contract.gamePrompt}</p>
       </details>
-      {view.contract.allowedActions.includes("end_turn") && (
+      {!finished && view.contract.allowedActions.includes("end_turn") && (
         <button className="control-button end-turn" type="button" disabled={!ownTurn || busy} onClick={() => onAction({ type: "end_turn" })}>
           {view.contract.turnOrder === "manual" ? "Record a pass" : "End turn"}
         </button>
       )}
+      {!finished && view.self.seatId === "host" && <button className="control-button finish-table-button" type="button" disabled={busy} onClick={onRequestFinish}>End game…</button>}
+    </section>
+  );
+}
+
+function ReplayControls({ replay, busy, onSelect }: { replay: RoomReplay; busy: boolean; onSelect: (revision: number) => void }) {
+  const index = Math.max(0, replay.revisions.indexOf(replay.view.revision));
+  const previous = replay.revisions[index - 1];
+  const next = replay.revisions[index + 1];
+  const event = replay.view.recentEvents.at(-1);
+  return (
+    <section className="replay-section" aria-labelledby="replay-heading">
+      <div className="replay-ticket"><span id="replay-heading">Recorded replay</span><strong>R{replay.view.revision}</strong></div>
+      <p>{replay.revisions.length} recorded moment{replay.revisions.length === 1 ? "" : "s"}</p>
+      <input aria-label="Replay revision" type="range" min={0} max={Math.max(0, replay.revisions.length - 1)} value={index} disabled={busy || replay.revisions.length < 2} onChange={(event) => onSelect(replay.revisions[Number(event.target.value)])} />
+      <div className="replay-transport">
+        <button type="button" disabled={busy || previous === undefined} onClick={() => previous !== undefined && onSelect(previous)}>← Previous</button>
+        <button type="button" disabled={busy || next === undefined} onClick={() => next !== undefined && onSelect(next)}>{next === undefined ? "At final table" : "Next →"}</button>
+      </div>
+      {event && <small>{eventText(event, replay.view.self.seatId)}</small>}
     </section>
   );
 }
@@ -292,33 +423,31 @@ function OpponentSeat({ opponent }: { opponent: TableView["opponent"] }) {
   return <div className="opponent-seat"><span className="seat-label">Across the table · {total} cards</span><div className="seat-zone-row">{groups.map((group) => <CardPile key={group.id} label={group.id} count={group.count} ordered={group.ordered} />)}</div></div>;
 }
 
-function PublicZone({ zone, view, selectedCards, active, disabled, onToggle, onAction }: {
+function PublicZone({ zone, view, selectedCards, interactive, active, disabled, onToggle, onAction }: {
   zone: TableView["publicZones"][number];
   view: TableView;
   selectedCards: string[];
+  interactive: boolean;
   active: boolean;
   disabled: boolean;
   onToggle: () => void;
   onAction: (action: TableAction) => void;
 }) {
   const label = zone.zoneId.replaceAll("_", " ");
+  const contents = <><span>{label}</span>{zone.cards.length ? <PlayingCard card={zone.cards.at(-1)} compact /> : <div className="empty-card-slot" />}<small>{cardCountLabel(zone.cardCount)}</small></>;
   return (
     <div className={`public-zone contextual-zone${active ? " active" : ""}`} onClick={(event) => event.stopPropagation()}>
-      <button className="zone-trigger public-zone-trigger" type="button" aria-haspopup="menu" aria-expanded={active} aria-label={`${label}, ${cardCountLabel(zone.cardCount)}. Show actions`} onClick={onToggle}>
-        <span>{label}</span>
-        {zone.cards.length ? <PlayingCard card={zone.cards.at(-1)} compact /> : <div className="empty-card-slot" />}
-        <small>{cardCountLabel(zone.cardCount)}</small>
-        <span className="zone-affordance" aria-hidden="true">{active ? "×" : "•••"}</span>
-      </button>
+      {interactive ? <button className="zone-trigger public-zone-trigger" type="button" aria-haspopup="menu" aria-expanded={active} aria-label={`${label}, ${cardCountLabel(zone.cardCount)}. Show actions`} onClick={onToggle}>{contents}<span className="zone-affordance" aria-hidden="true">{active ? "×" : "•••"}</span></button> : <div className="static-zone" aria-label={`${label}, ${cardCountLabel(zone.cardCount)}`}>{contents}</div>}
       {active && <ZoneMenu view={view} scope="public" zoneId={zone.zoneId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />}
     </div>
   );
 }
 
-function SelfSeat({ view, selectedCards, activeZone, disabled, onToggleCard, onClearSelection, onToggleZone, onAction }: {
+function SelfSeat({ view, selectedCards, activeZone, interactive, disabled, onToggleCard, onClearSelection, onToggleZone, onAction }: {
   view: TableView;
   selectedCards: string[];
   activeZone: ActiveZone;
+  interactive: boolean;
   disabled: boolean;
   onToggleCard: (cardId: string) => void;
   onClearSelection: () => void;
@@ -337,10 +466,10 @@ function SelfSeat({ view, selectedCards, activeZone, disabled, onToggleCard, onC
             count={zone.cardCount}
             ordered={zone.ordered}
             cards={zone.cards}
-            active={activeZone?.scope === "self" && activeZone.zoneId === zone.zoneId}
-            onToggle={() => onToggleZone(zone.zoneId)}
+            active={interactive && activeZone?.scope === "self" && activeZone.zoneId === zone.zoneId}
+            onToggle={interactive ? () => onToggleZone(zone.zoneId) : undefined}
           >
-            {activeZone?.scope === "self" && activeZone.zoneId === zone.zoneId && (
+            {interactive && activeZone?.scope === "self" && activeZone.zoneId === zone.zoneId && (
               <ZoneMenu view={view} scope="self" zoneId={zone.zoneId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />
             )}
           </CardPile>
@@ -348,7 +477,7 @@ function SelfSeat({ view, selectedCards, activeZone, disabled, onToggleCard, onC
       </div>
       {self.hand.length > 0 && (
         <>
-          {selectedCards.length > 0 && (
+          {interactive && selectedCards.length > 0 && (
             <div className="hand-context" role="status">
               <span>{selectedCards.length} selected{allowed.has("move") ? ". Choose a table pile to play." : ""}</span>
               <div>
@@ -358,7 +487,7 @@ function SelfSeat({ view, selectedCards, activeZone, disabled, onToggleCard, onC
               </div>
             </div>
           )}
-          <div className="hand" aria-label="Your hand">{self.hand.map((card) => <PlayingCard key={card.id} card={card} selected={selectedCards.includes(card.id)} onClick={() => onToggleCard(card.id)} />)}</div>
+          <div className="hand" aria-label="Your hand">{self.hand.map((card) => <PlayingCard key={card.id} card={card} selected={interactive && selectedCards.includes(card.id)} onClick={interactive ? () => onToggleCard(card.id) : undefined} />)}</div>
           <span className="seat-label">Your hand · {self.hand.length}</span>
         </>
       )}

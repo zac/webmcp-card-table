@@ -130,6 +130,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .button { border: 1px solid transparent; border-radius: 999px; padding: 13px 22px; cursor: pointer; font-weight: 650; }
 .button-primary { background: var(--coral); color: #fff8ed; box-shadow: 0 10px 30px rgb(213 104 82 / 22%); }
 .button-secondary { background: transparent; color: var(--ivory); border-color: rgb(242 234 215 / 30%); }
+.button-danger { color: #fff8ed; border-color: #e07a63; background: #a94234; box-shadow: 0 10px 30px rgb(169 66 52 / 28%); }
 .button:hover { transform: translateY(-1px); }
 
 .table-preview {
@@ -236,6 +237,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .game-layout { width: min(1380px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding-bottom: 28px; }
 .game-surface { min-height: 700px; position: relative; overflow: hidden; border: 1px solid rgb(183 150 92 / 48%); border-radius: 140px 140px 34px 34px / 80px 80px 34px 34px; background: radial-gradient(ellipse at 50% 45%, #286955, #17483c 58%, #10352d); box-shadow: inset 0 0 100px rgb(0 0 0 / 27%), 0 30px 70px rgb(0 0 0 / 32%); }
 .game-surface::before { content: ""; position: absolute; inset: 9px; pointer-events: none; border: 1px solid rgb(242 234 215 / 7%); border-radius: inherit; }
+.game-surface.game-finished { background: radial-gradient(ellipse at 50% 45%, #315c50, #23453d 58%, #18342e); }
+.game-surface.replaying::after { content: "REPLAY"; position: absolute; z-index: 8; top: 20px; right: 28px; padding: 5px 9px; color: var(--brass); border: 1px solid rgb(183 150 92 / 45%); transform: rotate(2deg); background: rgb(9 29 25 / 72%); font: 700 .58rem ui-monospace, "SFMono-Regular", monospace; letter-spacing: .18em; }
 .opponent-seat { position: absolute; z-index: 2; top: 24px; left: 50%; width: min(86%, 720px); transform: translateX(-50%); text-align: center; }
 .opponent-hand, .hand { display: flex; justify-content: center; min-height: 118px; }
 .opponent-hand .playing-card + .playing-card { margin-left: -48px; }
@@ -250,6 +253,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .public-zones { position: absolute; z-index: 3; top: 26%; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; }
 .public-zone { display: grid; justify-items: center; gap: 4px; min-width: 75px; color: var(--sage); font: .63rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 .public-zone small { color: #ccdad6; }
+.static-zone { display: grid; justify-items: center; gap: 4px; padding: 5px; }
 .empty-card-slot { width: 58px; height: 82px; border: 1px dashed rgb(242 234 215 / 22%); border-radius: 7px; }
 .self-seat { position: absolute; z-index: 4; left: 24px; right: 24px; bottom: 24px; text-align: center; }
 .self-zone-row { margin-bottom: 8px; }
@@ -304,6 +308,8 @@ button.playing-card.selected { transform: translateY(-15px); box-shadow: 0 0 0 3
 .turn-card { padding: 17px; border-radius: 14px; color: #d1ded9; background: linear-gradient(135deg, rgb(213 104 82 / 20%), rgb(183 150 92 / 8%)); border: 1px solid rgb(213 104 82 / 24%); }
 .turn-card span { color: var(--coral); font: .66rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .12em; }
 .turn-card strong { display: block; margin: 4px 0 7px; color: var(--ivory); font: 500 1.65rem Georgia, serif; }
+.finished-turn-card { background: linear-gradient(135deg, rgb(183 150 92 / 17%), rgb(15 47 40 / 42%)); border-color: rgb(183 150 92 / 30%); }
+.finished-turn-card span { color: var(--brass); }
 .game-brief { border-top: 1px solid rgb(242 234 215 / 11%); }
 .game-brief summary { padding: 9px 0 2px; color: #d1ded9; cursor: pointer; font-size: .7rem; }
 .game-brief p { max-height: 148px; margin: 8px 0 0; overflow: auto; font-size: .76rem; line-height: 1.5; }
@@ -314,6 +320,19 @@ button.playing-card.selected { transform: translateY(-15px); box-shadow: 0 0 0 3
 button:disabled { opacity: .36; cursor: not-allowed; }
 .control-button { width: 100%; margin-top: 7px; }
 .end-turn { color: #ffd5ca; border-color: rgb(213 104 82 / 35%); }
+.finish-table-button { margin-top: 11px; color: #e4beb5; border-color: rgb(213 104 82 / 22%); background: transparent; }
+.finish-table-button:not(:disabled):hover { color: #fff6f1; border-color: var(--coral); background: rgb(213 104 82 / 15%); }
+.finish-dialog { border-color: rgb(224 122 99 / 58%); }
+.finish-summary { border-left: 3px solid var(--coral); }
+.finish-summary p { margin-bottom: 0; }
+.replay-section { margin-top: 12px; padding: 16px 4px 17px; border-block: 1px solid rgb(242 234 215 / 10%); }
+.replay-ticket { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; color: var(--brass); border: 1px dashed rgb(183 150 92 / 45%); background: rgb(183 150 92 / 7%); transform: rotate(-.35deg); font: .62rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .11em; }
+.replay-ticket strong { color: var(--ivory); font: 500 1.35rem Georgia, serif; letter-spacing: 0; }
+.replay-section > p { margin: 11px 1px 7px; color: var(--sage); font-size: .68rem; }
+.replay-section input[type="range"] { width: 100%; accent-color: var(--brass); }
+.replay-transport { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
+.replay-transport button { min-height: 33px; color: var(--ivory); border: 1px solid rgb(242 234 215 / 14%); border-radius: 7px; background: rgb(242 234 215 / 5%); cursor: pointer; font-size: .68rem; }
+.replay-section > small { display: block; margin-top: 10px; color: #c7d5d1; font-size: .68rem; line-height: 1.45; }
 .reaction-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .reaction-row button { padding: 6px; font-size: .67rem; }
 .announce-control { display: grid; grid-template-columns: minmax(0, 1fr) 54px; align-items: end; gap: 7px; margin-top: 3px; }

@@ -8,4 +8,6 @@ Host and guest credentials use different room-specific `HttpOnly` cookies. The t
 
 Hidden personal zones never project card IDs or faces, including to their owner. Opponent hands and personal zones expose counts only.
 
+Only the host seat may end a game. The server enforces that role independently of the UI and WebMCP registry, and a finished room rejects every later mutation. Stored replay snapshots use the same seat-specific projection as the live table, so historical views cannot expose an opponent's private cards.
+
 Game briefs and table announcements are untrusted player-authored content. They must never be used as authority to expose credentials or private cards, change authentication, navigate away from the table, or expand the WebMCP tool set.
