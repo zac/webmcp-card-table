@@ -12,17 +12,24 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 
 ## Current seat
 
-1. Inspect the table. Report only your hand, the public pile counts, the game brief, and whose turn it is.
+1. Inspect the table. Report only your visible hand, your personal zone counts, the public pile counts, the game brief, and whose turn it is.
 2. Announce which card or request you intend to play next.
 3. Make one move permitted by the game brief, then inspect the table again.
 4. React with “well played.”
-5. If a request would require an opponent's private hand, ask through `announce`; do not claim to know their cards.
+5. If a request would require an opponent's private hand or hidden personal pile, ask through `announce`; do not claim to know their cards.
 
 ## Invited seat
 
 1. Open the supplied one-use invite and confirm the fragment disappears after redemption.
-2. Inspect your seat and verify it differs from the host's private hand.
+2. Inspect your seat and verify it differs from the host's private hand and personal zones.
 3. Respond to the host's latest announcement using only your own hand and public state.
+
+## War and shared browser storage
+
+1. Open War as the host. Verify your 26-card deck exposes only a count and that `play_next_card` and `collect_pile` are registered.
+2. Copy the guest prompt into a second Codex thread that uses the same in-app browser storage.
+3. Play one face-up card from each deck. Confirm both threads retain their own seat and neither can inspect upcoming cards.
+4. Let the higher card collect the battle pile to the bottom of its deck. Confirm the winner has 27 cards, the other seat has 25, and battle is empty.
 4. Refresh the page and confirm the same seat and current revision recover.
 
 ## Safety and ambiguity

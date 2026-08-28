@@ -30,6 +30,8 @@ At a table, tools are registered only when the contract allows the matching acti
 - `deal_cards`
 - `draw_cards`
 - `move_cards`
+- `play_next_card`
+- `collect_pile`
 - `give_cards`
 - `reveal_cards`
 - `shuffle_pile`
@@ -37,19 +39,23 @@ At a table, tools are registered only when the contract allows the matching acti
 - `react`
 - `end_turn`
 
-`announce` is a bounded 160-character public game channel. It lets players make requests and declarations—“Do you have any queens?”, “Eights are hearts”, “I won this battle”—without adding a general-purpose chat product.
+`play_next_card` moves the next card from an ordered personal pile without revealing it first. `collect_pile` moves a shared pile to the top or bottom of an ordered personal pile. Together they let the ordinary War preset use face-down decks without adding a War-specific game engine.
+
+`announce` is a bounded 160-character public game channel. It lets players make requests and declarations such as "Do you have any queens?" or "Eights are hearts" without adding a general-purpose chat product.
 
 Registrations feature-detect `document.modelContext` and are scoped to the active route with an `AbortController`. Results are bounded JSON. Tool execution forwards cancellation to the network request. The game brief and announcements are always labeled as untrusted player-authored content.
 
 ## Product and security behavior
 
-A `GameContract` contains a name, a game prompt of at most 2,000 characters, a 0–26 card starting hand, manual or alternating turns, public zones, and an allow-list of operations. Exactly one stock is required.
+A `GameContract` contains a name, a game prompt of at most 2,000 characters, a 0–26 card opening deal, its destination, manual or alternating turns, zones, and an allow-list of operations. Exactly one shared stock is required. Zones can be shared or instantiated once per seat. Seat zones can be owner-visible or hidden from everyone, and ordered zones support next-card play and top or bottom collection.
 
 All mutations carry an opaque `actionId` and `expectedRevision`. The pure reducer rejects duplicates, stale revisions, disabled actions, wrong turns, unknown zones, and card IDs not owned by the acting seat.
 
-Every card receives a cryptographically randomized opaque ID. Only the owning seat receives its private hand. Opponent hands expose a count only. Face-down public cards expose an ID and face state, never rank or suit.
+Every card receives a cryptographically randomized opaque ID. Only the owning seat receives its visible hand or owner-visible zone faces. Opponent cards expose counts only. A hidden personal deck exposes neither faces nor card IDs to its owner. Face-down shared cards expose an ID and face state, never rank or suit.
 
-Seat sessions use room-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies. Guest invite tokens live in URL fragments, are redeemed once, and are removed from the address bar before the browser makes a room request. Request logs never include bodies, cookies, invite tokens, prompts, announcements, or card faces.
+Seat sessions use separate room-and-seat-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies. A tab keeps only its non-secret `host` or `guest` selector in `sessionStorage`, then sends that selector with HTTP and WebSocket requests. This lets two Codex threads share one browser cookie jar without replacing each other's credentials. The server still requires the matching seat cookie.
+
+Guest invite tokens live in URL fragments, are redeemed once, and are removed from the address bar before the browser makes a room request. Request logs never include bodies, cookies, invite tokens, prompts, announcements, or card faces.
 
 ## Architecture
 
@@ -88,7 +94,7 @@ pnpm build
 pnpm deploy:dry
 ```
 
-`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build. The suites cover reducer invariants, prompt and message bounds, authorization, revisions, idempotency, visibility projections, shuffled-card identity, room persistence, one-use invites, cookie isolation, WebSocket resynchronization, hibernation, expiry, tool registration, approval, and cancellation forwarding.
+`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build. The suites cover reducer invariants, prompt and message bounds, authorization, revisions, idempotency, hidden ordered zones, next-card play, pile collection, visibility projections, shuffled-card identity, room persistence, one-use invites, two-seat shared-cookie isolation, WebSocket resynchronization, hibernation, expiry, tool registration, approval, and cancellation forwarding.
 
 For a browser acceptance pass:
 
@@ -97,8 +103,9 @@ For a browser acceptance pass:
 3. Draft a preset or custom game and confirm the visible rules slip changes.
 4. Call `start_table`; decline once, then call it again and approve.
 5. Confirm the table registry matches the contract, call `inspect_table`, and make one legal mutation.
-6. Copy the guest Codex prompt, redeem the invitation in a second browser session, and confirm seat-private hands plus real-time updates.
-7. Refresh both seats and confirm they recover the current projected snapshot.
+6. Copy the guest Codex prompt, redeem the invitation in a second Codex thread that shares browser storage, and confirm both tabs keep the correct seat plus real-time updates.
+7. For War, confirm both decks show counts and backs only, then call `play_next_card` from each seat and `collect_pile` from the winner.
+8. Refresh both seats and confirm they recover the current projected snapshot.
 
 ## API
 

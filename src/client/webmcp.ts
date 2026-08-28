@@ -156,7 +156,7 @@ export function registerTableTools(context: WebMcpContext, handlers: TableToolHa
     type: "object", additionalProperties: false, properties: { cardIds: cardIdsSchema }, required: ["cardIds"],
   }, (input) => ({ type: "give", cardIds: input.cardIds as string[], targetSeatId: handlers.getView().opponent.seatId }));
   if (allowed.has("reveal")) registerReveal(context, signal, handlers);
-  if (allowed.has("shuffle")) registerAction(context, signal, handlers, "shuffle_pile", "Shuffle a pile", "Cryptographically shuffle a public pile. Card identities stay opaque.", {
+  if (allowed.has("shuffle")) registerAction(context, signal, handlers, "shuffle_pile", "Shuffle a pile", "Cryptographically shuffle a shared pile or one of your personal piles. Card identities stay opaque.", {
     type: "object", additionalProperties: false, properties: { zoneId: zoneSchema }, required: ["zoneId"],
   }, (input) => ({ type: "shuffle", zoneId: String(input.zoneId) }));
   if (allowed.has("announce")) registerAction(context, signal, handlers, "announce", "Speak at the table", "Send a short public game message to coordinate a request, declaration, or result.", {

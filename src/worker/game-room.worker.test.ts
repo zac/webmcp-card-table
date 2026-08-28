@@ -117,7 +117,7 @@ describe("GameRoom", () => {
 });
 
 describe("room HTTP API", () => {
-  it("creates a prompt-defined room and returns an invite and room-scoped secure cookie", async () => {
+  it("creates a prompt-defined room and returns an invite and room-and-seat-scoped secure cookie", async () => {
     const response = await exports.default.fetch("http://example.com/api/rooms", {
       method: "POST",
       headers: { "content-type": "application/json" },

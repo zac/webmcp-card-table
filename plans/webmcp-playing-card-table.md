@@ -12,14 +12,14 @@ Success means a judge can open the live URL, choose or write a game, approve roo
 
 - The lobby is a single “new table” flow with four starting points: Go Fish, Crazy Eights, War, and Open Table.
 - Choosing a preset fills an ordinary game name, prompt, hand size, turn style, zones, and action allow-list. Editing it produces a custom table.
-- Advanced settings stay collapsed by default. They expose starting hand size, manual or alternating turns, public zones, and allowed actions.
+- Advanced settings stay collapsed by default. They expose opening-card count and destination, manual or alternating turns, shared and per-seat zones, and allowed actions.
 - `start_table` always waits for an explicit in-page approval dialog. Decline and cancellation reject the pending tool call without creating a room.
 - Every room has a one-use fragment invite. The host gets three clear handoffs:
   - Copy invite
   - Copy guest Codex prompt
   - Play my seat with Codex
 - The guest redeems the token once; the fragment is immediately cleared.
-- The table includes private hands, public piles, turn/connection state, the game brief, direct controls, fixed reactions, and a structured event log.
+- The table includes private hands, owner-visible or fully hidden personal piles, shared piles, turn/connection state, the game brief, direct controls, fixed reactions, and a structured event log.
 - A bounded 160-character `announce` operation lets players make in-game requests and declarations. It is public, rendered as text, retained only in bounded room history, and treated as untrusted content.
 
 ## Shared contract and reducer
@@ -28,14 +28,16 @@ Success means a judge can open the live URL, choose or write a game, approve roo
 interface GameContract {
   name: string;                 // 1–80 characters
   gamePrompt: string;           // 1–2,000 characters, untrusted
-  startingHandSize: number;     // 0–26
+  startingHandSize: number;     // 0–26 opening cards per seat
+  startingZoneId: string;       // hand or a seat-owned zone
   turnOrder: "alternating" | "manual";
-  zones: ZoneConfig[];          // exactly one stock
+  zones: ZoneConfig[];          // one shared stock, optional seat zones
   allowedActions: ActionName[];
 }
 
 type ActionName =
-  | "deal" | "draw" | "move" | "give" | "reveal"
+  | "deal" | "draw" | "move" | "play_next" | "collect"
+  | "give" | "reveal"
   | "shuffle" | "announce" | "react" | "end_turn";
 ```
 
@@ -43,7 +45,9 @@ type ActionName =
 - Every mutation requires `actionId` and `expectedRevision`.
 - Manual turns allow either seat to act; `end_turn` records a pass. Alternating turns enforce one active seat and pass control with `end_turn`.
 - The application enforces deck integrity, ownership, visibility, zones, allowed actions, and turn authority. Players enforce the game rules in the brief.
-- Cards have opaque randomized IDs. Seat projections include faces for the caller's hand only. Public faces appear only when a card is face-up.
+- A zone is shared or instantiated once per seat. Seat zones can be owner-visible or hidden even from their owner, and can preserve order.
+- `play_next` moves the next card from an actor-owned ordered zone without exposing or selecting it. `collect` moves a shared pile to the top or bottom of an actor-owned ordered zone.
+- Cards have opaque randomized IDs. Seat projections include faces only for the caller's visible hand and owner-visible zones. Hidden personal zones expose counts only. Shared faces appear only when a card is face-up.
 
 ## Cloudflare architecture
 
@@ -78,6 +82,8 @@ Table, filtered by `allowedActions`:
 - `deal_cards`
 - `draw_cards`
 - `move_cards`
+- `play_next_card`
+- `collect_pile`
 - `give_cards`
 - `reveal_cards`
 - `shuffle_pile`
@@ -89,7 +95,8 @@ Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations
 
 ## Security and privacy
 
-- Room-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies authenticate seats.
+- Separate room-and-seat-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies authenticate seats.
+- Each tab stores only a non-secret seat selector in `sessionStorage`. HTTP sends it in `X-Card-Table-Seat`; WebSockets send it as the non-secret `seat` query value. The server selects and verifies the matching seat cookie.
 - Session and invite values are stored only as hashes.
 - Invite tokens are never placed in query strings or server logs.
 - Logs contain request metadata only—never bodies, prompts, announcements, cards, cookies, or tokens.
@@ -98,10 +105,10 @@ Tool schemas and results remain bounded. `inspect_table` is read-only. Mutations
 
 ## Verification and delivery
 
-- Unit-test contracts, prompt/message bounds, card conservation, authorization, revisions, idempotency, ownership, visibility, zones, turns, shuffling, and preset validity.
-- Integration-test creation, one-use invitations, room cookie isolation, stale and duplicate actions, WebSocket snapshots/updates, hibernation attachments, expiry, and per-seat projections.
+- Unit-test contracts, prompt/message bounds, card conservation, authorization, revisions, idempotency, ownership, visibility, hidden ordered zones, next-card play, pile collection, turns, shuffling, and preset validity.
+- Integration-test creation, one-use invitations, two seats sharing one cookie jar, stale and duplicate actions, WebSocket snapshots/updates, hibernation attachments, expiry, and per-seat projections.
 - Test lobby approval, cancellation forwarding, contract-filtered tool registration, structured results, and UI/tool parity.
-- Browser-test preset selection, visible drafting, approval/decline, creation, invite copy, Codex handoff copy, announcement UI, actual WebMCP registry contents, tool execution, refresh recovery, responsive layout, and accessibility.
+- Browser-test preset selection, visible drafting, approval/decline, creation, invite copy, two Codex tabs sharing cookies, announcement UI, hidden deck rendering, next-card play, pile collection, actual WebMCP registry contents, refresh recovery, responsive layout, and accessibility.
 - Run lint, type checking, unit tests, Worker tests, production build, and `wrangler deploy --dry-run` before delivery.
 - Publish the MIT-licensed repository and deploy the exact source to `webmcp-card-table`.
 - Configure Cloudflare Workers Builds against the public repository and remove redundant GitHub Actions only after a successful Cloudflare build is confirmed.

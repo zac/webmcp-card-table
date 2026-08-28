@@ -139,7 +139,7 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
           <h1 id="lobby-title">Name the game.<br />Deal in your agent.</h1>
           <p className="hero-copy">Write the rules in plain language, invite another seat, then play through the same controls available to ChatGPT and Codex.</p>
           <div className="table-proof" aria-label="Product capabilities">
-            <span>52 opaque cards</span><span>2 private hands</span><span>Live WebMCP tools</span>
+            <span>52 opaque cards</span><span>2 private seats</span><span>Live WebMCP tools</span>
           </div>
         </div>
 
@@ -242,7 +242,7 @@ function DraftEditor({ draft, onChange }: { draft: GameContract; onChange: (draf
       <details className="advanced-settings">
         <summary>Advanced table settings <span>{draft.startingHandSize} cards to {draft.startingZoneId} · {draft.turnOrder}</span></summary>
         <div className="advanced-grid">
-          <label>Starting hand<input type="number" min={0} max={26} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
+          <label>Opening cards per seat<input type="number" min={0} max={26} value={draft.startingHandSize} onChange={(event) => update("startingHandSize", Number(event.target.value))} /></label>
           <label>Turn handling<select value={draft.turnOrder} onChange={(event) => update("turnOrder", event.target.value as GameContract["turnOrder"])}><option value="manual">Players manage turns</option><option value="alternating">Table enforces turns</option></select></label>
           <label>Opening cards<select value={draft.startingZoneId} onChange={(event) => update("startingZoneId", event.target.value)}><option value="hand">Visible hand</option>{seatZones.map((zone) => <option key={zone.id} value={zone.id}>{zone.id.replaceAll("_", " ")} ({zone.visibility})</option>)}</select></label>
         </div>
