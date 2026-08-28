@@ -5,8 +5,7 @@ export const REACTIONS = ["well_played", "thinking", "ouch", "gg"] as const;
 export type Rank = (typeof RANKS)[number];
 export type Suit = (typeof SUITS)[number];
 export type Reaction = (typeof REACTIONS)[number];
-export type GameKind = "go_fish" | "free_play";
-export type SeatId = "host" | "guest" | "human" | "house";
+export type SeatId = "host" | "guest";
 
 export type GenericActionName =
   | "deal"
@@ -15,10 +14,10 @@ export type GenericActionName =
   | "give"
   | "reveal"
   | "shuffle"
+  | "announce"
   | "react"
   | "end_turn";
-export type GoFishActionName = "request_rank";
-export type ActionName = GenericActionName | GoFishActionName;
+export type ActionName = GenericActionName;
 
 export interface ZoneConfig {
   id: string;
@@ -27,15 +26,12 @@ export interface ZoneConfig {
 }
 
 export interface GameContract {
-  kind: GameKind;
   name: string;
-  objective: string;
+  gamePrompt: string;
   startingHandSize: number;
   turnOrder: "alternating" | "manual";
   zones: ZoneConfig[];
   allowedActions: ActionName[];
-  winCondition: string;
-  note?: string;
 }
 
 export interface Card {
@@ -56,7 +52,6 @@ export interface ZoneState extends ZoneConfig {
 export interface SeatState {
   seatId: SeatId;
   hand: Card[];
-  books: Card[][];
 }
 
 export type TableAction =
@@ -66,9 +61,9 @@ export type TableAction =
   | { type: "give"; cardIds: string[]; targetSeatId: SeatId }
   | { type: "reveal"; cardIds: string[] }
   | { type: "shuffle"; zoneId: string }
+  | { type: "announce"; message: string }
   | { type: "react"; reaction: Reaction }
-  | { type: "end_turn" }
-  | { type: "request_rank"; rank: Rank };
+  | { type: "end_turn" };
 
 export type TableEventType =
   | "room_created"
@@ -78,13 +73,9 @@ export type TableEventType =
   | "cards_given"
   | "cards_revealed"
   | "zone_shuffled"
+  | "announcement"
   | "reaction"
-  | "turn_ended"
-  | "rank_requested"
-  | "go_fish"
-  | "book_made"
-  | "card_drawn_for_empty_hand"
-  | "game_finished";
+  | "turn_ended";
 
 export interface TableEvent {
   id: string;
@@ -109,7 +100,6 @@ export interface TableState {
   winnerSeatId: SeatId | null;
   lastActivityAt: number;
   expiresAt: number;
-  nextBotActionAt: number | null;
 }
 
 export interface ActionEnvelope {
@@ -142,8 +132,8 @@ export interface TableView {
   activeSeatId: SeatId | null;
   status: TableState["status"];
   winnerSeatId: SeatId | null;
-  self: { seatId: SeatId; hand: CardView[]; books?: CardView[][] };
-  opponent: { seatId: SeatId; cardCount: number; bookCount?: number };
+  self: { seatId: SeatId; hand: CardView[] };
+  opponent: { seatId: SeatId; cardCount: number };
   publicZones: PublicZoneView[];
   recentEvents: TableEvent[];
 }

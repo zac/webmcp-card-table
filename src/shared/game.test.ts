@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FREE_PLAY_CONTRACT, validateContract } from "./contracts";
+import { DEFAULT_FREE_PLAY_CONTRACT, GAME_PRESETS, validateContract } from "./contracts";
 import { countCards, createDeck } from "./deck";
 import { applyAction, createTable, GameError } from "./engine";
 import { projectTable } from "./projection";
@@ -42,18 +42,18 @@ describe("deck", () => {
 
 describe("contracts", () => {
   it("requires one stock and a bounded hand", () => {
-    expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, startingHandSize: 14 })).toThrowError("Starting hand size");
+    expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, startingHandSize: 27 })).toThrowError("Starting hand size");
     expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, zones: [] })).toThrowError("1 to 12 zones");
   });
 
-  it("does not allow voluntary passes in Go Fish", () => {
-    expect(() =>
-      validateContract({
-        ...DEFAULT_FREE_PLAY_CONTRACT,
-        kind: "go_fish",
-        allowedActions: ["request_rank", "end_turn"],
-      }),
-    ).toThrowError("voluntary pass");
+  it("bounds the player-authored prompt", () => {
+    expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, gamePrompt: "" })).toThrowError("Game prompt");
+    expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, gamePrompt: "x".repeat(2_001) })).toThrowError("2,000");
+  });
+
+  it("ships presets as ordinary validated contracts", () => {
+    expect(GAME_PRESETS.map((preset) => preset.id)).toEqual(["go_fish", "crazy_eights", "war", "open_table"]);
+    for (const preset of GAME_PRESETS) expect(validateContract(preset.contract)).toEqual(preset.contract);
   });
 });
 
@@ -88,7 +88,7 @@ describe("generic reducer", () => {
   });
 
   it("rejects stale, duplicate, disabled, and out-of-turn actions", () => {
-    const initial = table();
+    const initial = table({ ...DEFAULT_FREE_PLAY_CONTRACT, turnOrder: "alternating" });
     expectGameError(
       () => applyAction(initial, "host", { actionId: "x", expectedRevision: 2, action: { type: "end_turn" } }, dependencies()),
       "stale_revision",
@@ -114,6 +114,25 @@ describe("generic reducer", () => {
     );
     expect(next.activeSeatId).toBeNull();
     expect(next.events.at(-1)?.type).toBe("turn_ended");
+  });
+
+  it("records a bounded public announcement without interpreting it", () => {
+    const initial = table({ ...DEFAULT_FREE_PLAY_CONTRACT, turnOrder: "manual" });
+    const next = applyAction(
+      initial,
+      "guest",
+      { actionId: "say-1", expectedRevision: 0, action: { type: "announce", message: "Do you have any queens?" } },
+      dependencies(),
+    );
+    expect(next.events.at(-1)).toMatchObject({
+      type: "announcement",
+      actorSeatId: "guest",
+      data: { message: "Do you have any queens?" },
+    });
+    expectGameError(
+      () => applyAction(initial, "guest", { actionId: "say-2", expectedRevision: 0, action: { type: "announce", message: "x".repeat(161) } }, dependencies()),
+      "invalid_announcement",
+    );
   });
 
   it("enforces card ownership for moves and gives", () => {

@@ -8,7 +8,6 @@ export function projectTable(state: TableState, seatId: SeatId): TableView {
   const opponent = state.seats.find((seat) => seat.seatId !== seatId);
   if (!self || !opponent) throw new GameError("unknown_seat", "The caller is not seated at this table", 403);
 
-  const goFish = state.contract.kind === "go_fish";
   return {
     roomId: state.roomId,
     revision: state.revision,
@@ -16,15 +15,10 @@ export function projectTable(state: TableState, seatId: SeatId): TableView {
     activeSeatId: state.activeSeatId,
     status: state.status,
     winnerSeatId: state.winnerSeatId,
-    self: {
-      seatId: self.seatId,
-      hand: self.hand.map(cardView),
-      ...(goFish ? { books: self.books.map((book) => book.map(cardView)) } : {}),
-    },
+    self: { seatId: self.seatId, hand: self.hand.map(cardView) },
     opponent: {
       seatId: opponent.seatId,
       cardCount: opponent.hand.length,
-      ...(goFish ? { bookCount: opponent.books.length } : {}),
     },
     publicZones: state.zones.map((zone) => ({
       zoneId: zone.id,
@@ -47,4 +41,3 @@ function cardView(card: Card): CardView {
 function projectEvent(event: TableEvent): TableEvent {
   return structuredClone(event);
 }
-

@@ -7,9 +7,9 @@ const GENERIC_ACTIONS = new Set<ActionName>([
   "give",
   "reveal",
   "shuffle",
+  "announce",
   "react",
   "end_turn",
-  "request_rank",
 ]);
 const IDENTIFIER = /^[a-z][a-z0-9_-]{0,29}$/;
 
@@ -24,17 +24,11 @@ export function validateContract(contract: GameContract): GameContract {
   if (contract.name.trim().length < 1 || contract.name.length > 80) {
     throw new ContractError("invalid_name", "Game name must contain 1 to 80 characters");
   }
-  if (contract.objective.trim().length < 1 || contract.objective.length > 280) {
-    throw new ContractError("invalid_objective", "Objective must contain 1 to 280 characters");
+  if (contract.gamePrompt.trim().length < 1 || contract.gamePrompt.length > 2_000) {
+    throw new ContractError("invalid_game_prompt", "Game prompt must contain 1 to 2,000 characters");
   }
-  if (!Number.isInteger(contract.startingHandSize) || contract.startingHandSize < 0 || contract.startingHandSize > 13) {
-    throw new ContractError("invalid_hand_size", "Starting hand size must be an integer from 0 through 13");
-  }
-  if (contract.note !== undefined && contract.note.length > 280) {
-    throw new ContractError("invalid_note", "Note cannot exceed 280 characters");
-  }
-  if (contract.winCondition.trim().length < 1 || contract.winCondition.length > 280) {
-    throw new ContractError("invalid_win_condition", "Win condition must contain 1 to 280 characters");
+  if (!Number.isInteger(contract.startingHandSize) || contract.startingHandSize < 0 || contract.startingHandSize > 26) {
+    throw new ContractError("invalid_hand_size", "Starting hand size must be an integer from 0 through 26");
   }
   if (contract.zones.length < 1 || contract.zones.length > 12) {
     throw new ContractError("invalid_zones", "A contract needs 1 to 12 zones");
@@ -65,16 +59,6 @@ export function validateContract(contract: GameContract): GameContract {
   if (new Set(contract.allowedActions).size !== contract.allowedActions.length) {
     throw new ContractError("duplicate_action", "Allowed actions cannot contain duplicates");
   }
-  if (contract.kind === "go_fish" && contract.allowedActions.includes("end_turn")) {
-    throw new ContractError("go_fish_pass", "Go Fish does not allow a voluntary pass");
-  }
-  if (contract.kind === "go_fish" && !contract.allowedActions.includes("request_rank")) {
-    throw new ContractError("go_fish_request", "Go Fish must enable request_rank");
-  }
-  if (contract.kind === "free_play" && contract.allowedActions.includes("request_rank")) {
-    throw new ContractError("free_play_request", "request_rank is reserved for Go Fish");
-  }
-
   return structuredClone(contract);
 }
 
@@ -84,30 +68,94 @@ function validateZone(zone: ZoneConfig): void {
   }
 }
 
-export const PRACTICE_CONTRACT: GameContract = {
-  kind: "go_fish",
-  name: "Practice Go Fish",
-  objective: "Collect more four-card books than the house player.",
-  startingHandSize: 7,
-  turnOrder: "alternating",
-  zones: [{ id: "stock", kind: "stock", facing: "down" }],
-  allowedActions: ["request_rank", "reveal", "react"],
-  winCondition: "The player with more books after all thirteen books are made wins.",
-  note: "Ask only for a rank you hold. Catches and matching draws let you go again.",
-};
+export const ALL_ACTIONS: ActionName[] = ["deal", "draw", "move", "give", "reveal", "shuffle", "announce", "react", "end_turn"];
 
-export const DEFAULT_FREE_PLAY_CONTRACT: GameContract = {
-  kind: "free_play",
-  name: "Open table",
-  objective: "Play any two-player game that uses a standard deck.",
-  startingHandSize: 5,
-  turnOrder: "alternating",
-  zones: [
-    { id: "stock", kind: "stock", facing: "down" },
-    { id: "discard", kind: "discard", facing: "up" },
-  ],
-  allowedActions: ["deal", "draw", "move", "give", "reveal", "shuffle", "react", "end_turn"],
-  winCondition: "The players decide when the game is complete.",
-};
+export type GamePresetId = "go_fish" | "crazy_eights" | "war" | "open_table";
+
+export interface GamePreset {
+  id: GamePresetId;
+  label: string;
+  description: string;
+  contract: GameContract;
+}
+
+export const GAME_PRESETS: GamePreset[] = [
+  {
+    id: "go_fish",
+    label: "Go Fish",
+    description: "Ask, transfer matches, draw, and lay down books.",
+    contract: {
+      name: "Go Fish",
+      gamePrompt: "Play two-player Go Fish. On your turn, announce a rank that appears in your hand. If the opponent has that rank, they give every matching card to you and you continue. Otherwise they announce Go Fish; you draw one card from stock and continue only if it matches the requested rank. Move each set of four equal ranks face-up to your book pile. With no cards in hand, draw one if stock remains. The player with the most books when all cards are resolved wins. Use end_turn only when the rules pass play to the other seat.",
+      startingHandSize: 7,
+      turnOrder: "manual",
+      zones: [
+        { id: "stock", kind: "stock", facing: "down" },
+        { id: "host_books", kind: "pile", facing: "up" },
+        { id: "guest_books", kind: "pile", facing: "up" },
+      ],
+      allowedActions: [...ALL_ACTIONS],
+    },
+  },
+  {
+    id: "crazy_eights",
+    label: "Crazy Eights",
+    description: "Match suit or rank; eights change the active suit.",
+    contract: {
+      name: "Crazy Eights",
+      gamePrompt: "Play two-player Crazy Eights. Move one card face-up to discard when it matches the top discard by rank or suit. An eight is wild: announce the suit it represents. If you cannot play, draw one from stock; play it if legal, otherwise end your turn. The first player with no cards wins. Announce a win when you play your final card.",
+      startingHandSize: 7,
+      turnOrder: "alternating",
+      zones: [
+        { id: "stock", kind: "stock", facing: "down" },
+        { id: "discard", kind: "discard", facing: "up" },
+      ],
+      allowedActions: [...ALL_ACTIONS],
+    },
+  },
+  {
+    id: "war",
+    label: "War",
+    description: "A full-deck showdown with face-up battles.",
+    contract: {
+      name: "War",
+      gamePrompt: "Play two-player War. Each player keeps their hand order and moves the next card face-up to the battle pile. Higher rank takes the battle; aces are high. On a tie, each player adds three face-down cards and then one face-up card. The winner of that comparison takes the pile. Because this table is free-form, announce each battle result and keep score by cards won. The player who wins all 52 cards wins.",
+      startingHandSize: 26,
+      turnOrder: "manual",
+      zones: [
+        { id: "stock", kind: "stock", facing: "down" },
+        { id: "battle", kind: "pile", facing: "up" },
+      ],
+      allowedActions: [...ALL_ACTIONS],
+    },
+  },
+  {
+    id: "open_table",
+    label: "Open table",
+    description: "Start with a blank rules brief and make it yours.",
+    contract: {
+      name: "Open table",
+      gamePrompt: "Agree on a two-player game using a standard 52-card deck. Announce decisions that the other player needs to know, use the table actions to manipulate only your cards, and announce when the game is complete.",
+      startingHandSize: 5,
+      turnOrder: "manual",
+      zones: [
+        { id: "stock", kind: "stock", facing: "down" },
+        { id: "discard", kind: "discard", facing: "up" },
+      ],
+      allowedActions: [...ALL_ACTIONS],
+    },
+  },
+];
+
+export const DEFAULT_FREE_PLAY_CONTRACT: GameContract = structuredClone(
+  GAME_PRESETS.find((preset) => preset.id === "open_table")!.contract,
+);
+
+export const GO_FISH_PRESET_CONTRACT: GameContract = structuredClone(
+  GAME_PRESETS.find((preset) => preset.id === "go_fish")!.contract,
+);
+
+/* Kept as a named export for the lobby's initial draft. */
+export const DEFAULT_TABLE_CONTRACT: GameContract = DEFAULT_FREE_PLAY_CONTRACT;
 
 export const REACTION_VALUES = [...REACTIONS];
