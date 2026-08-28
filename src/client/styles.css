@@ -304,7 +304,8 @@ button.playing-card.selected .card-side { box-shadow: 0 0 0 3px var(--coral), 0 
 .card-corner span { font-size: .9rem; }
 .card-suit { position: absolute; inset: 0; display: grid; place-items: center; font-size: 2.3rem; }
 .red { color: #bb4437; }
-.table-transition-card { pointer-events: none; transform-origin: center; perspective: 760px; will-change: transform; }
+.table-transition-card, .table-transition-cover-card { pointer-events: none; transform-origin: center; perspective: 760px; }
+.table-transition-card { will-change: transform; }
 
 .contextual-zone { position: relative; }
 .contextual-zone.active { z-index: 20; }

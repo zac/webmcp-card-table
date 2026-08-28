@@ -79,7 +79,9 @@ export function playTableTransition(transition: PendingTableTransition, view: Ta
 
   const targetCard = motion.placement === "bottom" ? firstCard(targetZone) : lastCard(targetZone);
   const targetRect = targetCard?.getBoundingClientRect() ?? targetZone.getBoundingClientRect();
-  transition.cards.forEach((card, index) => moveCollectedCard(card, targetRect, index, transition.cards.length));
+  const destinationCover = coverDestinationCards(targetZone, transition.cards.length);
+  const movements = transition.cards.map((card, index) => moveCollectedCard(card, targetRect, index, transition.cards.length));
+  void Promise.all(movements).finally(() => destinationCover.forEach((card) => card.remove()));
 }
 
 function moveDestinationCard(destination: HTMLElement, sourceRect: DOMRect, flip: boolean, index: number): void {
@@ -102,11 +104,12 @@ function moveDestinationCard(destination: HTMLElement, sourceRect: DOMRect, flip
   }
 }
 
-function moveCollectedCard(card: CardSnapshot, targetRect: DOMRect, index: number, count: number): void {
+function moveCollectedCard(card: CardSnapshot, targetRect: DOMRect, index: number, count: number): Promise<void> {
   const clone = card.clone;
   clone.classList.add("table-transition-card");
   clone.setAttribute("aria-hidden", "true");
   clone.removeAttribute("role");
+  clone.removeAttribute("aria-label");
   Object.assign(clone.style, {
     position: "fixed",
     zIndex: String(1000 + index),
@@ -138,7 +141,30 @@ function moveCollectedCard(card: CardSnapshot, targetRect: DOMRect, index: numbe
       { transform: "rotateY(180deg)", offset: 1 },
     ], { duration, delay: index * 38, easing: "cubic-bezier(.24,.62,.2,1)", fill: "both" });
   }
-  movement.finished.catch(() => undefined).finally(() => clone.remove());
+  return movement.finished.then(() => undefined, () => undefined).finally(() => clone.remove());
+}
+
+function coverDestinationCards(targetZone: HTMLElement, movingCardCount: number): HTMLElement[] {
+  return [...targetZone.querySelectorAll<HTMLElement>("[data-card-visual]")].map((card, index) => {
+    const rect = card.getBoundingClientRect();
+    const cover = card.cloneNode(true) as HTMLElement;
+    cover.classList.add("table-transition-cover-card");
+    cover.setAttribute("aria-hidden", "true");
+    cover.removeAttribute("role");
+    cover.removeAttribute("aria-label");
+    Object.assign(cover.style, {
+      position: "fixed",
+      zIndex: String(1000 + movingCardCount + index + 1),
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      margin: "0",
+      pointerEvents: "none",
+    });
+    document.body.append(cover);
+    return cover;
+  });
 }
 
 function snapshot(card: HTMLElement): CardSnapshot {
