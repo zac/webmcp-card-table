@@ -11,6 +11,7 @@ import type {
   TableAction,
   TableEvent,
   TableState,
+  Rank,
   ZoneState,
 } from "./types";
 
@@ -84,6 +85,12 @@ export function createTable(options: CreateTableOptions): TableState {
     expiresAt: options.now + ROOM_TTL_MS,
     nextBotActionAt: null,
   };
+  if (state.contract.kind === "go_fish") {
+    const initialEvents: TableEvent[] = [];
+    for (const seat of state.seats) layDownBooks(state, seat, 0, options.now, options.idFactory, initialEvents);
+    state.events.push(...initialEvents);
+    finishGoFishIfComplete(state, 0, options.now, options.idFactory, state.events);
+  }
   assertCardConservation(state);
   return state;
 }
@@ -115,14 +122,164 @@ export function applyAction(
 
   const next = structuredClone(current);
   const nextRevision = current.revision + 1;
-  const event = applyGenericAction(next, actorSeatId, envelope.action, nextRevision, dependencies);
+  const events =
+    envelope.action.type === "request_rank"
+      ? applyGoFishAction(next, actorSeatId, envelope.action.rank, nextRevision, dependencies)
+      : [applyGenericAction(next, actorSeatId, envelope.action, nextRevision, dependencies)];
   next.revision = nextRevision;
   next.lastActivityAt = dependencies.now;
   next.expiresAt = dependencies.now + ROOM_TTL_MS;
   next.processedActionIds = [...next.processedActionIds, envelope.actionId].slice(-MAX_ACTION_IDS);
-  next.events = [...next.events, event].slice(-MAX_EVENTS);
+  next.events = [...next.events, ...events].slice(-MAX_EVENTS);
   assertCardConservation(next);
   return next;
+}
+
+function applyGoFishAction(
+  state: TableState,
+  actorSeatId: SeatId,
+  rank: Rank,
+  revision: number,
+  dependencies: EngineDependencies,
+): TableEvent[] {
+  if (state.contract.kind !== "go_fish") throw new GameError("wrong_game", "Rank requests are only available in Go Fish");
+  const actor = getSeat(state, actorSeatId);
+  const opponent = otherSeat(state, actorSeatId);
+  if (!actor.hand.some((card) => card.rank === rank)) {
+    throw new GameError("rank_not_held", "You may only request a rank in your hand");
+  }
+  const events: TableEvent[] = [
+    makeEvent(dependencies, revision, "rank_requested", actorSeatId, { rank, targetSeatId: opponent.seatId }),
+  ];
+  const matches = opponent.hand.filter((card) => card.rank === rank);
+
+  if (matches.length > 0) {
+    const matchIds = new Set(matches.map((card) => card.id));
+    opponent.hand = opponent.hand.filter((card) => !matchIds.has(card.id));
+    actor.hand.push(...matches);
+    events.push(
+      makeEvent(dependencies, revision, "cards_given", opponent.seatId, {
+        targetSeatId: actorSeatId,
+        count: matches.length,
+        rank,
+      }),
+    );
+    state.activeSeatId = actorSeatId;
+  } else {
+    const stock = getZone(state, "stock");
+    const drawn = stock.cards.pop()?.card;
+    if (drawn) actor.hand.push(drawn);
+    const matched = drawn?.rank === rank;
+    events.push(
+      makeEvent(dependencies, revision, "go_fish", actorSeatId, {
+        drewCard: Boolean(drawn),
+        matched,
+        requestedRank: rank,
+        ...(matched && drawn ? { revealedCard: `${drawn.rank}:${drawn.suit}`, cardId: drawn.id } : {}),
+      }),
+    );
+    state.activeSeatId = matched ? actorSeatId : opponent.seatId;
+  }
+
+  layDownBooks(state, actor, revision, dependencies.now, dependencies.eventId, events);
+  layDownBooks(state, opponent, revision, dependencies.now, dependencies.eventId, events);
+  finishGoFishIfComplete(state, revision, dependencies.now, dependencies.eventId, events);
+  if (state.status === "active") prepareActiveSeat(state, revision, dependencies, events);
+  return events;
+}
+
+function prepareActiveSeat(
+  state: TableState,
+  revision: number,
+  dependencies: EngineDependencies,
+  events: TableEvent[],
+): void {
+  for (let attempts = 0; attempts < 2 && state.status === "active"; attempts += 1) {
+    if (!state.activeSeatId) return;
+    const seat = getSeat(state, state.activeSeatId);
+    if (seat.hand.length > 0) return;
+    const stock = getZone(state, "stock");
+    const card = stock.cards.pop()?.card;
+    if (card) {
+      seat.hand.push(card);
+      events.push(makeEvent(dependencies, revision, "card_drawn_for_empty_hand", seat.seatId, { count: 1 }));
+      layDownBooks(state, seat, revision, dependencies.now, dependencies.eventId, events);
+      finishGoFishIfComplete(state, revision, dependencies.now, dependencies.eventId, events);
+      if (seat.hand.length > 0 || state.status !== "active") return;
+      continue;
+    }
+    const next = otherSeat(state, seat.seatId);
+    state.activeSeatId = next.seatId;
+    events.push(makeEvent(dependencies, revision, "turn_ended", seat.seatId, { nextSeatId: next.seatId, reason: "empty_hand" }));
+  }
+}
+
+function layDownBooks(
+  _state: TableState,
+  seat: SeatState,
+  revision: number,
+  now: number,
+  eventId: () => string,
+  events: TableEvent[],
+): void {
+  for (const rank of RANK_ORDER) {
+    const cards = seat.hand.filter((card) => card.rank === rank);
+    if (cards.length !== 4) continue;
+    const ids = new Set(cards.map((card) => card.id));
+    seat.hand = seat.hand.filter((card) => !ids.has(card.id));
+    seat.books.push(cards);
+    events.push({
+      id: eventId(),
+      revision,
+      type: "book_made",
+      actorSeatId: seat.seatId,
+      at: now,
+      data: { seatId: seat.seatId, rank, count: 4 },
+    });
+  }
+}
+
+function finishGoFishIfComplete(
+  state: TableState,
+  revision: number,
+  now: number,
+  eventId: () => string,
+  events: TableEvent[],
+): void {
+  if (state.seats[0].books.length + state.seats[1].books.length !== 13) return;
+  const winner = state.seats[0].books.length > state.seats[1].books.length ? state.seats[0] : state.seats[1];
+  state.status = "finished";
+  state.winnerSeatId = winner.seatId;
+  state.activeSeatId = null;
+  state.nextBotActionAt = null;
+  events.push({
+    id: eventId(),
+    revision,
+    type: "game_finished",
+    actorSeatId: null,
+    at: now,
+    data: { winnerSeatId: winner.seatId, books: winner.books.length },
+  });
+}
+
+function makeEvent(
+  dependencies: EngineDependencies,
+  revision: number,
+  type: TableEvent["type"],
+  actorSeatId: SeatId | null,
+  data: TableEvent["data"],
+): TableEvent {
+  return { id: dependencies.eventId(), revision, type, actorSeatId, at: dependencies.now, data };
+}
+
+const RANK_ORDER: readonly Rank[] = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+export function chooseHouseRank(state: TableState, houseSeatId: SeatId = "house"): Rank {
+  const hand = getSeat(state, houseSeatId).hand;
+  if (hand.length === 0) throw new GameError("empty_house_hand", "The house has no rank to request", 409);
+  const counts = new Map<Rank, number>();
+  for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
+  return [...counts.entries()].sort((left, right) => right[1] - left[1] || RANK_ORDER.indexOf(left[0]) - RANK_ORDER.indexOf(right[0]))[0][0];
 }
 
 function applyGenericAction(
