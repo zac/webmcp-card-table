@@ -1,6 +1,7 @@
 import { REACTIONS, type ActionName, type GameContract, type ZoneConfig } from "./types";
 
 const GENERIC_ACTIONS = new Set<ActionName>([
+  "deal",
   "draw",
   "move",
   "give",
@@ -105,9 +106,8 @@ export const DEFAULT_FREE_PLAY_CONTRACT: GameContract = {
     { id: "stock", kind: "stock", facing: "down" },
     { id: "discard", kind: "discard", facing: "up" },
   ],
-  allowedActions: ["draw", "move", "give", "reveal", "shuffle", "react", "end_turn"],
+  allowedActions: ["deal", "draw", "move", "give", "reveal", "shuffle", "react", "end_turn"],
   winCondition: "The players decide when the game is complete.",
 };
 
 export const REACTION_VALUES = [...REACTIONS];
-

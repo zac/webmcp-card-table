@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_FREE_PLAY_CONTRACT, type ActionName, type GameContract } from "../shared";
 import { createFreePlayRoom, createPracticeRoom, type CreatedRoom } from "./api";
+import { activeModelContext, registerLobbyTools } from "./webmcp";
 
 interface LobbyProps {
   onRoomCreated: (room: CreatedRoom) => void;
 }
 
 const ACTION_OPTIONS: { name: ActionName; label: string }[] = [
+  { name: "deal", label: "Deal to both seats" },
   { name: "draw", label: "Draw" },
   { name: "move", label: "Play to piles" },
   { name: "give", label: "Give cards" },
@@ -21,6 +23,38 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
   const [showDraft, setShowDraft] = useState(false);
   const [busy, setBusy] = useState<"practice" | "free_play" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [approval, setApproval] = useState<PendingApproval | null>(null);
+  const draftRef = useRef(draft);
+  const approvalRef = useRef<PendingApproval | null>(null);
+  const approveButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => { approvalRef.current = approval; }, [approval]);
+  useEffect(() => { if (approval) approveButton.current?.focus(); }, [approval]);
+
+  useEffect(() => {
+    const context = activeModelContext();
+    if (!context) return;
+    const lifecycle = new AbortController();
+    registerLobbyTools(context, {
+      getDraft: () => draftRef.current,
+      setDraft: (next) => { draftRef.current = next; setDraft(next); setShowDraft(true); },
+      requestStart: (signal) => new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason ?? new DOMException("Tool execution cancelled", "AbortError"));
+        if (approvalRef.current) return reject(new Error("Another table approval is already pending"));
+        const pending: PendingApproval = { signal, resolve, reject };
+        approvalRef.current = pending;
+        setApproval(pending);
+        signal.addEventListener("abort", () => {
+          if (approvalRef.current !== pending) return;
+          approvalRef.current = null;
+          setApproval(null);
+          reject(signal.reason ?? new DOMException("Tool execution cancelled", "AbortError"));
+        }, { once: true });
+      }),
+    }, lifecycle.signal);
+    return () => lifecycle.abort();
+  }, []);
 
   async function startPractice() {
     setBusy("practice");
@@ -44,6 +78,35 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function approveAgentStart() {
+    const pending = approvalRef.current;
+    if (!pending) return;
+    setBusy("free_play");
+    setError(null);
+    try {
+      const room = await createFreePlayRoom(draftRef.current, pending.signal);
+      approvalRef.current = null;
+      setApproval(null);
+      pending.resolve({ roomId: room.roomId, inviteUrl: room.inviteUrl });
+      window.setTimeout(() => onRoomCreated(room), 0);
+    } catch (reason) {
+      approvalRef.current = null;
+      setApproval(null);
+      pending.reject(reason);
+      if (!pending.signal.aborted) setError(messageFor(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function declineAgentStart() {
+    const pending = approvalRef.current;
+    if (!pending) return;
+    approvalRef.current = null;
+    setApproval(null);
+    pending.reject(new Error("The human declined to create the table"));
   }
 
   return (
@@ -74,8 +137,28 @@ export function Lobby({ onRoomCreated }: LobbyProps) {
         <p>Direct controls and WebMCP tools use the same rules.</p>
         <a href="https://github.com/zac/webmcp-card-table">Source</a>
       </footer>
+      {approval && (
+        <div className="approval-backdrop">
+          <section className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-description">
+            <p className="eyebrow">Agent request</p>
+            <h2 id="approval-title">Open this private table?</h2>
+            <p id="approval-description">An agent prepared <strong>{draft.name}</strong> with {draft.startingHandSize} starting cards and {draft.allowedActions.length} allowed actions. Creating it will deal a new randomized deck.</p>
+            <div className="approval-contract"><span>Objective</span><p>{draft.objective}</p><span>Win condition</span><p>{draft.winCondition}</p></div>
+            <div className="approval-actions">
+              <button className="button button-secondary" type="button" disabled={busy !== null} onClick={declineAgentStart}>Decline</button>
+              <button ref={approveButton} className="button button-primary" type="button" disabled={busy !== null} onClick={() => void approveAgentStart()}>{busy === "free_play" ? "Opening…" : "Approve and open"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
+}
+
+interface PendingApproval {
+  signal: AbortSignal;
+  resolve: (room: { roomId: string; inviteUrl?: string }) => void;
+  reject: (reason: unknown) => void;
 }
 
 export function SiteHeader({ onHome }: { onHome?: () => void }) {
@@ -132,4 +215,3 @@ function DraftEditor({ draft, onChange, onStart, busy }: { draft: GameContract; 
 function messageFor(reason: unknown): string {
   return reason instanceof Error ? reason.message : "The table could not be opened";
 }
-

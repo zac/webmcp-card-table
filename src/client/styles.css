@@ -124,6 +124,16 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .inline-error { width: fit-content; max-width: 620px; margin: 18px auto 0; padding: 10px 14px; color: #ffd6cc; background: rgb(137 52 40 / 35%); border: 1px solid rgb(213 104 82 / 50%); border-radius: 10px; line-height: 1.45; }
 
+.approval-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(3 12 10 / 78%); backdrop-filter: blur(8px); }
+.approval-dialog { width: min(540px, 100%); padding: clamp(25px, 5vw, 42px); border: 1px solid rgb(183 150 92 / 52%); border-radius: 24px; color: var(--ivory); background: linear-gradient(145deg, #17443a, #0c241f); box-shadow: 0 35px 100px rgb(0 0 0 / 55%); }
+.approval-dialog h2 { margin: 9px 0 14px; font: 500 clamp(2rem, 7vw, 3rem)/1 Georgia, serif; }
+.approval-dialog > p:not(.eyebrow) { color: #c4d3cf; line-height: 1.6; }
+.approval-contract { margin: 24px 0; padding: 18px; border-radius: 13px; background: rgb(5 25 21 / 46%); }
+.approval-contract span { color: var(--brass); font: .66rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .12em; }
+.approval-contract p { margin: 5px 0 16px; line-height: 1.45; }
+.approval-contract p:last-child { margin-bottom: 0; }
+.approval-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
 .draft-panel {
   width: min(1000px, calc(100% - 32px));
   margin: 0 auto 60px;

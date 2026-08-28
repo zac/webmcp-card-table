@@ -124,6 +124,8 @@ function parseContract(value: unknown): GameContract {
 function parseAction(value: unknown): TableAction {
   const action = requireObject(value);
   switch (action.type) {
+    case "deal":
+      return { type: "deal", zoneId: requireString(action.zoneId, "zoneId"), countPerSeat: requireNumber(action.countPerSeat, "countPerSeat") };
     case "draw":
       return { type: "draw", zoneId: requireString(action.zoneId, "zoneId"), count: requireNumber(action.count, "count") };
     case "move":

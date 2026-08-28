@@ -58,6 +58,21 @@ describe("contracts", () => {
 });
 
 describe("generic reducer", () => {
+  it("deals equally from the chosen zone in one transaction", () => {
+    const initial = table();
+    const next = applyAction(
+      initial,
+      "host",
+      { actionId: "deal-1", expectedRevision: 0, action: { type: "deal", zoneId: "stock", countPerSeat: 2 } },
+      dependencies(),
+    );
+    expect(next.seats[0].hand).toHaveLength(7);
+    expect(next.seats[1].hand).toHaveLength(7);
+    expect(next.zones.find((zone) => zone.id === "stock")?.cards).toHaveLength(38);
+    expect(next.events.at(-1)?.type).toBe("cards_dealt");
+    expect(countCards(next)).toBe(52);
+  });
+
   it("deals and draws without losing cards", () => {
     const initial = table();
     const next = applyAction(

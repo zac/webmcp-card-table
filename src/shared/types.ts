@@ -9,6 +9,7 @@ export type GameKind = "go_fish" | "free_play";
 export type SeatId = "host" | "guest" | "human" | "house";
 
 export type GenericActionName =
+  | "deal"
   | "draw"
   | "move"
   | "give"
@@ -59,6 +60,7 @@ export interface SeatState {
 }
 
 export type TableAction =
+  | { type: "deal"; zoneId: string; countPerSeat: number }
   | { type: "draw"; zoneId: string; count: number }
   | { type: "move"; cardIds: string[]; zoneId: string; face: "up" | "down" }
   | { type: "give"; cardIds: string[]; targetSeatId: SeatId }
@@ -70,6 +72,7 @@ export type TableAction =
 
 export type TableEventType =
   | "room_created"
+  | "cards_dealt"
   | "cards_drawn"
   | "cards_moved"
   | "cards_given"
@@ -154,4 +157,3 @@ export interface EngineDependencies {
   random: RandomSource;
   eventId: () => string;
 }
-

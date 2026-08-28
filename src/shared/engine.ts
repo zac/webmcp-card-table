@@ -293,6 +293,23 @@ function applyGenericAction(
   const base = { id: dependencies.eventId(), revision, actorSeatId, at: dependencies.now };
 
   switch (action.type) {
+    case "deal": {
+      if (!Number.isInteger(action.countPerSeat) || action.countPerSeat < 1 || action.countPerSeat > 13) {
+        throw new GameError("invalid_deal_count", "Deal count must be an integer from 1 through 13");
+      }
+      const zone = getZone(state, action.zoneId);
+      const total = action.countPerSeat * state.seats.length;
+      if (zone.cards.length < total) throw new GameError("insufficient_cards", `${zone.id} does not have enough cards for that deal`);
+      const actorIndex = state.seats.findIndex((seat) => seat.seatId === actorSeatId);
+      for (let round = 0; round < action.countPerSeat; round += 1) {
+        for (let offset = 0; offset < state.seats.length; offset += 1) {
+          const card = zone.cards.pop()?.card;
+          if (!card) throw new GameError("insufficient_cards", `${zone.id} does not have enough cards for that deal`);
+          state.seats[(actorIndex + offset) % state.seats.length].hand.push(card);
+        }
+      }
+      return { ...base, type: "cards_dealt", data: { zoneId: zone.id, countPerSeat: action.countPerSeat } };
+    }
     case "draw": {
       if (!Number.isInteger(action.count) || action.count < 1 || action.count > 13) {
         throw new GameError("invalid_draw_count", "Draw count must be an integer from 1 through 13");

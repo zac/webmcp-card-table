@@ -4,6 +4,7 @@ import { RANKS } from "../shared";
 import { ApiError, fetchTable, redeemInvite, submitTableAction } from "./api";
 import { PlayingCard } from "./Card";
 import { SiteHeader } from "./Lobby";
+import { activeModelContext, registerTableTools } from "./webmcp";
 
 interface TablePageProps {
   roomId: string;
@@ -28,9 +29,12 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
   const [knownInviteUrl] = useState(inviteUrl);
   const loaded = useRef(false);
   const revision = useRef(initialView?.revision ?? 0);
+  const viewRef = useRef<TableView | null>(initialView ?? null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     revision.current = view?.revision ?? revision.current;
+    viewRef.current = view;
   }, [view]);
 
   useEffect(() => {
@@ -96,29 +100,62 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
     };
   }, [roomId, Boolean(view)]);
 
-  const act = useCallback(async (action: TableAction) => {
-    if (!view || busy) return;
+  const executeAction = useCallback(async (action: TableAction, signal?: AbortSignal): Promise<TableView> => {
+    const current = viewRef.current;
+    if (!current) throw new Error("The table is still loading");
+    if (busyRef.current) throw new Error("Another table action is still in progress");
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
       const next = await submitTableAction(roomId, {
         actionId: crypto.randomUUID(),
-        expectedRevision: view.revision,
+        expectedRevision: current.revision,
         action,
-      });
+      }, signal);
       revision.current = next.revision;
+      viewRef.current = next;
       setView(next);
       setSelectedCards([]);
+      return next;
     } catch (reason) {
       setError(messageFor(reason));
       if (reason instanceof ApiError && reason.code === "stale_revision") {
-        const fresh = await fetchTable(roomId);
+        const fresh = await fetchTable(roomId, signal);
+        viewRef.current = fresh;
         setView(fresh);
       }
+      throw reason;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [busy, roomId, view]);
+  }, [roomId]);
+
+  const act = useCallback(async (action: TableAction) => {
+    try {
+      await executeAction(action);
+    } catch {
+      // The UI renders the actionable error set by executeAction.
+    }
+  }, [executeAction]);
+
+  const toolSetKey = view ? `${view.contract.kind}:${view.contract.allowedActions.join(",")}` : "loading";
+  useEffect(() => {
+    if (!viewRef.current) return;
+    const context = activeModelContext();
+    if (!context) return;
+    const lifecycle = new AbortController();
+    registerTableTools(context, {
+      getView: () => {
+        const current = viewRef.current;
+        if (!current) throw new Error("The table is still loading");
+        return current;
+      },
+      executeAction,
+    }, lifecycle.signal);
+    return () => lifecycle.abort();
+  }, [executeAction, toolSetKey]);
 
   if (!view) {
     return <main className="table-shell"><SiteHeader onHome={onHome} /><section className="loading-table"><div className="deck-loader" /><h1>Finding your seat…</h1>{error && <p className="inline-error" role="alert">{error}</p>}</section></main>;
@@ -175,7 +212,7 @@ function FreePlayControls({ view, selectedCards, ownTurn, busy, onAction }: { vi
   const [count, setCount] = useState(1);
   const disabled = !ownTurn || busy;
   const allowed = new Set(view.contract.allowedActions);
-  return <section className="action-section free-controls"><h2>Table actions</h2><label>Active pile<select value={zoneId} onChange={(event) => setZoneId(event.target.value)}>{view.publicZones.map((zone) => <option key={zone.zoneId} value={zone.zoneId}>{zone.zoneId}</option>)}</select></label>{allowed.has("draw") && <div className="inline-control"><input aria-label="Draw count" type="number" min={1} max={13} value={count} onChange={(event) => setCount(Number(event.target.value))} /><button type="button" disabled={disabled} onClick={() => onAction({ type: "draw", zoneId, count })}>Draw</button></div>}{allowed.has("move") && <div className="split-buttons"><button type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "up" })}>Play face up</button><button type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "down" })}>Play face down</button></div>}{allowed.has("give") && <button className="control-button" type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "give", cardIds: selectedCards, targetSeatId: view.opponent.seatId })}>Give selected</button>}{allowed.has("reveal") && <button className="control-button" type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "reveal", cardIds: selectedCards })}>Reveal selected</button>}{allowed.has("shuffle") && <button className="control-button" type="button" disabled={disabled} onClick={() => onAction({ type: "shuffle", zoneId })}>Shuffle pile</button>}{allowed.has("end_turn") && <button className="control-button end-turn" type="button" disabled={disabled} onClick={() => onAction({ type: "end_turn" })}>{view.contract.turnOrder === "manual" ? "Record a pass" : "End turn"}</button>}</section>;
+  return <section className="action-section free-controls"><h2>Table actions</h2><label>Active pile<select value={zoneId} onChange={(event) => setZoneId(event.target.value)}>{view.publicZones.map((zone) => <option key={zone.zoneId} value={zone.zoneId}>{zone.zoneId}</option>)}</select></label>{(allowed.has("deal") || allowed.has("draw")) && <div className="inline-control"><input aria-label="Card count" type="number" min={1} max={13} value={count} onChange={(event) => setCount(Number(event.target.value))} />{allowed.has("draw") && <button type="button" disabled={disabled} onClick={() => onAction({ type: "draw", zoneId, count })}>Draw</button>}</div>}{allowed.has("deal") && <button className="control-button" type="button" disabled={disabled} onClick={() => onAction({ type: "deal", zoneId, countPerSeat: count })}>Deal {count} to each seat</button>}{allowed.has("move") && <div className="split-buttons"><button type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "up" })}>Play face up</button><button type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "down" })}>Play face down</button></div>}{allowed.has("give") && <button className="control-button" type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "give", cardIds: selectedCards, targetSeatId: view.opponent.seatId })}>Give selected</button>}{allowed.has("reveal") && <button className="control-button" type="button" disabled={disabled || selectedCards.length === 0} onClick={() => onAction({ type: "reveal", cardIds: selectedCards })}>Reveal selected</button>}{allowed.has("shuffle") && <button className="control-button" type="button" disabled={disabled} onClick={() => onAction({ type: "shuffle", zoneId })}>Shuffle pile</button>}{allowed.has("end_turn") && <button className="control-button end-turn" type="button" disabled={disabled} onClick={() => onAction({ type: "end_turn" })}>{view.contract.turnOrder === "manual" ? "Record a pass" : "End turn"}</button>}</section>;
 }
 
 function ReactionControls({ enabled, busy, onAction }: { enabled: boolean; busy: boolean; onAction: (action: TableAction) => void }) {
@@ -211,6 +248,7 @@ function eventText(event: TableEvent): string {
   const actor = event.actorSeatId === "human" || event.actorSeatId === "host" || event.actorSeatId === "guest" ? event.actorSeatId : event.actorSeatId ?? "Table";
   switch (event.type) {
     case "room_created": return "The deck was shuffled and dealt.";
+    case "cards_dealt": return `${actor} dealt ${String(event.data.countPerSeat)} card${event.data.countPerSeat === 1 ? "" : "s"} to each seat.`;
     case "rank_requested": return `${actor} asked for ${String(event.data.rank)}s.`;
     case "go_fish": return event.data.matched ? `${actor} drew the requested rank and goes again.` : `${actor} went fishing.`;
     case "book_made": return `${actor} completed a book of ${String(event.data.rank)}s.`;
@@ -229,4 +267,3 @@ function eventText(event: TableEvent): string {
 function messageFor(reason: unknown): string {
   return reason instanceof Error ? reason.message : "The table could not complete that action";
 }
-
