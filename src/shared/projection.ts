@@ -15,23 +15,42 @@ export function projectTable(state: TableState, seatId: SeatId): TableView {
     activeSeatId: state.activeSeatId,
     status: state.status,
     winnerSeatId: state.winnerSeatId,
-    self: { seatId: self.seatId, hand: self.hand.map(cardView) },
+    self: {
+      seatId: self.seatId,
+      hand: self.hand.map(cardView),
+      zones: state.zones
+        .filter((zone) => zone.ownerSeatId === self.seatId)
+        .map((zone) => ({
+          zoneId: zone.id,
+          kind: zone.kind,
+          visibility: zone.visibility === "hidden" ? "hidden" : "owner",
+          ordered: zone.ordered,
+          cardCount: zone.cards.length,
+          cards: zone.visibility === "hidden" ? [] : zone.cards.map(({ card, face }) => publicCardView(card, face)),
+        })),
+    },
     opponent: {
       seatId: opponent.seatId,
       cardCount: opponent.hand.length,
+      zones: state.zones
+        .filter((zone) => zone.ownerSeatId === opponent.seatId)
+        .map((zone) => ({ zoneId: zone.id, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cards.length })),
     },
-    publicZones: state.zones.map((zone) => ({
+    publicZones: state.zones.filter((zone) => zone.ownerSeatId === null).map((zone) => ({
       zoneId: zone.id,
       kind: zone.kind,
+      ordered: zone.ordered,
       cardCount: zone.cards.length,
-      cards: zone.cards.map(({ card, face }) =>
-        face === "up"
-          ? { id: card.id, face, rank: card.rank, suit: card.suit }
-          : { id: card.id, face },
-      ),
+      cards: zone.cards.map(({ card, face }) => publicCardView(card, face)),
     })),
     recentEvents: state.events.slice(-MAX_VIEW_EVENTS).map(projectEvent),
   };
+}
+
+function publicCardView(card: Card, face: "up" | "down") {
+  return face === "up"
+    ? { id: card.id, face, rank: card.rank, suit: card.suit } as const
+    : { id: card.id, face } as const;
 }
 
 function cardView(card: Card): CardView {

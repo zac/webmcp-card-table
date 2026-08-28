@@ -261,6 +261,8 @@ function eventText(event: TableEvent, selfSeatId: SeatId): string {
     case "cards_dealt": return `${actor} dealt ${String(event.data.countPerSeat)} card${event.data.countPerSeat === 1 ? "" : "s"} to each seat.`;
     case "cards_drawn": return `${actor} drew ${String(event.data.count)} card${event.data.count === 1 ? "" : "s"}.`;
     case "cards_moved": return `${actor} played cards to ${String(event.data.zoneId).replaceAll("_", " ")}.`;
+    case "next_card_played": return `${actor} played the next card from ${String(event.data.sourceZoneId).replaceAll("_", " ")}.`;
+    case "pile_collected": return `${actor} collected ${String(event.data.count)} cards from ${String(event.data.sourceZoneId).replaceAll("_", " ")}.`;
     case "cards_given": return `${actor} handed over ${String(event.data.count)} card${event.data.count === 1 ? "" : "s"}.`;
     case "cards_revealed": return `${actor} revealed selected cards.`;
     case "zone_shuffled": return `${actor} shuffled ${String(event.data.zoneId).replaceAll("_", " ")}.`;

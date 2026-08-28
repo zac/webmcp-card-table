@@ -13,9 +13,9 @@ function view(): TableView {
   const contract = DEFAULT_FREE_PLAY_CONTRACT;
   return {
     roomId: "room-1", revision: 3, contract, activeSeatId: "host", status: "active", winnerSeatId: null,
-    self: { seatId: "host", hand: [{ id: "opaque-1", rank: "A", suit: "spades" }] },
-    opponent: { seatId: "guest", cardCount: 7 },
-    publicZones: [{ zoneId: "stock", kind: "stock", cardCount: 37, cards: [{ id: "opaque-2", face: "down" }] }], recentEvents: [],
+    self: { seatId: "host", hand: [{ id: "opaque-1", rank: "A", suit: "spades" }], zones: [] },
+    opponent: { seatId: "guest", cardCount: 7, zones: [] },
+    publicZones: [{ zoneId: "stock", kind: "stock", ordered: true, cardCount: 37, cards: [{ id: "opaque-2", face: "down" }] }], recentEvents: [],
   };
 }
 
@@ -47,7 +47,7 @@ describe("WebMCP table tools", () => {
     const executeAction = vi.fn(async () => ({ ...current, revision: 4 }));
     registerTableTools(context, { getView: () => current, executeAction }, new AbortController().signal);
 
-    expect([...tools.keys()].sort()).toEqual(["announce", "deal_cards", "draw_cards", "end_turn", "give_cards", "inspect_table", "move_cards", "react", "reveal_cards", "shuffle_pile"]);
+    expect([...tools.keys()].sort()).toEqual(["announce", "collect_pile", "deal_cards", "draw_cards", "end_turn", "give_cards", "inspect_table", "move_cards", "play_next_card", "react", "reveal_cards", "shuffle_pile"]);
     expect(tools.get("inspect_table")?.annotations?.readOnlyHint).toBe(true);
     expect(tools.get("announce")?.annotations).toMatchObject({ destructiveHint: false, untrustedContentHint: true });
     const execution = new AbortController();

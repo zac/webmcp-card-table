@@ -97,6 +97,7 @@ function parseContract(value: unknown): GameContract {
     name: requireString(object.name, "name"),
     gamePrompt: requireString(object.gamePrompt, "gamePrompt"),
     startingHandSize: requireNumber(object.startingHandSize, "startingHandSize"),
+    startingZoneId: requireString(object.startingZoneId, "startingZoneId"),
     turnOrder:
       object.turnOrder === "alternating" || object.turnOrder === "manual"
         ? object.turnOrder
@@ -110,6 +111,12 @@ function parseContract(value: unknown): GameContract {
             ? zone.kind
             : invalid("Zone kind is invalid"),
         facing: zone.facing === "up" || zone.facing === "down" ? zone.facing : invalid("Zone facing is invalid"),
+        scope: zone.scope === "shared" || zone.scope === "seat" ? zone.scope : invalid("Zone scope is invalid"),
+        visibility:
+          zone.visibility === "public" || zone.visibility === "owner" || zone.visibility === "hidden"
+            ? zone.visibility
+            : invalid("Zone visibility is invalid"),
+        ordered: requireBoolean(zone.ordered, "zone.ordered"),
       };
     }),
     allowedActions: object.allowedActions.map((action) => requireString(action, "allowedActions")) as GameContract["allowedActions"],
@@ -130,6 +137,20 @@ function parseAction(value: unknown): TableAction {
         cardIds: requireStringArray(action.cardIds, "cardIds"),
         zoneId: requireString(action.zoneId, "zoneId"),
         face: action.face === "up" || action.face === "down" ? action.face : invalid("face must be up or down"),
+      };
+    case "play_next":
+      return {
+        type: "play_next",
+        sourceZoneId: requireString(action.sourceZoneId, "sourceZoneId"),
+        targetZoneId: requireString(action.targetZoneId, "targetZoneId"),
+        face: action.face === "up" || action.face === "down" ? action.face : invalid("face must be up or down"),
+      };
+    case "collect":
+      return {
+        type: "collect",
+        sourceZoneId: requireString(action.sourceZoneId, "sourceZoneId"),
+        targetZoneId: requireString(action.targetZoneId, "targetZoneId"),
+        placement: action.placement === "top" || action.placement === "bottom" ? action.placement : invalid("placement must be top or bottom"),
       };
     case "give":
       return { type: "give", cardIds: requireStringArray(action.cardIds, "cardIds"), targetSeatId: parseSeatId(action.targetSeatId) };
@@ -170,6 +191,11 @@ function requireString(value: unknown, field: string): string {
 
 function requireNumber(value: unknown, field: string): number {
   if (typeof value !== "number") throw new RequestError("invalid_request", `${field} must be a number`);
+  return value;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new RequestError("invalid_request", `${field} must be a boolean`);
   return value;
 }
 

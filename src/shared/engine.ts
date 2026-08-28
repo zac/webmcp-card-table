@@ -44,23 +44,35 @@ export function createTable(options: CreateTableOptions): TableState {
   const stockConfig = contract.zones.find((zone) => zone.kind === "stock");
   if (!stockConfig) throw new GameError("missing_stock", "A stock zone is required");
 
-  for (let cardIndex = 0; cardIndex < contract.startingHandSize; cardIndex += 1) {
-    for (const seat of seats) {
-      const card = deck.pop();
-      if (card) seat.hand.push(card);
+  const zones: ZoneState[] = [];
+  for (const zone of contract.zones) {
+    if (zone.scope === "shared") {
+      zones.push({ ...zone, ownerSeatId: null, cards: [] });
+    } else {
+      for (const seat of seats) zones.push({ ...zone, ownerSeatId: seat.seatId, cards: [] });
     }
   }
 
-  const zones: ZoneState[] = contract.zones.map((zone) => ({
-    ...zone,
-    cards:
-      zone.id === stockConfig.id
-        ? deck.map((card) => ({ card, face: zone.facing }))
-        : [],
-  }));
+  for (let cardIndex = 0; cardIndex < contract.startingHandSize; cardIndex += 1) {
+    for (const seat of seats) {
+      const card = deck.pop();
+      if (!card) continue;
+      if (contract.startingZoneId === "hand") {
+        seat.hand.push(card);
+      } else {
+        getOwnedZoneFrom(zones, contract.startingZoneId, seat.seatId).cards.push({
+          card,
+          face: getOwnedZoneFrom(zones, contract.startingZoneId, seat.seatId).facing,
+        });
+      }
+    }
+  }
+
+  const stock = getSharedZoneFrom(zones, stockConfig.id);
+  stock.cards = deck.map((card) => ({ card, face: stock.facing }));
 
   const state: TableState = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     roomId: options.roomId,
     revision: 0,
     contract,
@@ -139,7 +151,7 @@ function applyGenericAction(
       if (!Number.isInteger(action.countPerSeat) || action.countPerSeat < 1 || action.countPerSeat > 26) {
         throw new GameError("invalid_deal_count", "Deal count must be an integer from 1 through 26");
       }
-      const zone = getZone(state, action.zoneId);
+      const zone = getSharedZone(state, action.zoneId);
       const total = action.countPerSeat * state.seats.length;
       if (zone.cards.length < total) throw new GameError("insufficient_cards", `${zone.id} does not have enough cards for that deal`);
       const actorIndex = state.seats.findIndex((seat) => seat.seatId === actorSeatId);
@@ -147,7 +159,8 @@ function applyGenericAction(
         for (let offset = 0; offset < state.seats.length; offset += 1) {
           const card = zone.cards.pop()?.card;
           if (!card) throw new GameError("insufficient_cards", `${zone.id} does not have enough cards for that deal`);
-          state.seats[(actorIndex + offset) % state.seats.length].hand.push(card);
+          const targetSeat = state.seats[(actorIndex + offset) % state.seats.length];
+          placeOpeningCard(state, targetSeat, card);
         }
       }
       return { ...base, type: "cards_dealt", data: { zoneId: zone.id, countPerSeat: action.countPerSeat } };
@@ -156,7 +169,7 @@ function applyGenericAction(
       if (!Number.isInteger(action.count) || action.count < 1 || action.count > 13) {
         throw new GameError("invalid_draw_count", "Draw count must be an integer from 1 through 13");
       }
-      const zone = getZone(state, action.zoneId);
+      const zone = getSharedZone(state, action.zoneId);
       if (zone.cards.length === 0) throw new GameError("empty_zone", `${zone.id} has no cards to draw`);
       const count = Math.min(action.count, zone.cards.length);
       const cards = zone.cards.splice(-count).map(({ card }) => card);
@@ -165,12 +178,39 @@ function applyGenericAction(
     }
     case "move": {
       const cards = takeOwnedCards(actor, action.cardIds);
-      const zone = getZone(state, action.zoneId);
+      const zone = getSharedZone(state, action.zoneId);
       zone.cards.push(...cards.map((card) => ({ card, face: action.face })));
       return {
         ...base,
         type: "cards_moved",
         data: { zoneId: zone.id, cardIds: cards.map((card) => card.id), face: action.face },
+      };
+    }
+    case "play_next": {
+      const source = getOwnedZone(state, action.sourceZoneId, actorSeatId);
+      if (!source.ordered) throw new GameError("unordered_zone", `${source.id} does not have a next card`);
+      const nextCard = source.cards.pop();
+      if (!nextCard) throw new GameError("empty_zone", `${source.id} has no cards to play`);
+      const target = getSharedZone(state, action.targetZoneId);
+      target.cards.push({ card: nextCard.card, face: action.face });
+      return {
+        ...base,
+        type: "next_card_played",
+        data: { sourceZoneId: source.id, targetZoneId: target.id, face: action.face, cardId: nextCard.card.id },
+      };
+    }
+    case "collect": {
+      const source = getSharedZone(state, action.sourceZoneId);
+      if (source.cards.length === 0) throw new GameError("empty_zone", `${source.id} has no cards to collect`);
+      const target = getOwnedZone(state, action.targetZoneId, actorSeatId);
+      if (!target.ordered) throw new GameError("unordered_zone", `${target.id} cannot receive an ordered pile`);
+      const collected = source.cards.splice(0).map(({ card }) => ({ card, face: target.facing }));
+      if (action.placement === "bottom") target.cards.unshift(...collected);
+      else target.cards.push(...collected);
+      return {
+        ...base,
+        type: "pile_collected",
+        data: { sourceZoneId: source.id, targetZoneId: target.id, placement: action.placement, count: collected.length },
       };
     }
     case "give": {
@@ -193,7 +233,7 @@ function applyGenericAction(
       };
     }
     case "shuffle": {
-      const zone = getZone(state, action.zoneId);
+      const zone = getAccessibleZone(state, action.zoneId, actorSeatId);
       zone.cards = shuffleCards(zone.cards, dependencies.random);
       return { ...base, type: "zone_shuffled", data: { zoneId: zone.id, count: zone.cards.length } };
     }
@@ -250,9 +290,17 @@ export function otherSeat(state: TableState, seatId: SeatId): SeatState {
   return seat;
 }
 
-export function getZone(state: TableState, zoneId: string): ZoneState {
-  const zone = state.zones.find((candidate) => candidate.id === zoneId);
-  if (!zone) throw new GameError("unknown_zone", `Zone ${zoneId} does not exist`, 404);
+export function getSharedZone(state: TableState, zoneId: string): ZoneState {
+  return getSharedZoneFrom(state.zones, zoneId);
+}
+
+export function getOwnedZone(state: TableState, zoneId: string, seatId: SeatId): ZoneState {
+  return getOwnedZoneFrom(state.zones, zoneId, seatId);
+}
+
+function getAccessibleZone(state: TableState, zoneId: string, seatId: SeatId): ZoneState {
+  const zone = state.zones.find((candidate) => candidate.id === zoneId && (candidate.ownerSeatId === null || candidate.ownerSeatId === seatId));
+  if (!zone) throw new GameError("unknown_zone", `Zone ${zoneId} does not exist for this seat`, 404);
   return zone;
 }
 
@@ -263,4 +311,25 @@ export function assertCardConservation(state: TableState): void {
     ...state.zones.flatMap((zone) => zone.cards.map(({ card }) => card.id)),
   ];
   if (new Set(ids).size !== 52) throw new GameError("duplicate_card", "Every card ID must be unique", 500);
+}
+
+function placeOpeningCard(state: TableState, seat: SeatState, card: Card): void {
+  if (state.contract.startingZoneId === "hand") {
+    seat.hand.push(card);
+    return;
+  }
+  const zone = getOwnedZone(state, state.contract.startingZoneId, seat.seatId);
+  zone.cards.push({ card, face: zone.facing });
+}
+
+function getSharedZoneFrom(zones: ZoneState[], zoneId: string): ZoneState {
+  const zone = zones.find((candidate) => candidate.id === zoneId && candidate.ownerSeatId === null);
+  if (!zone) throw new GameError("unknown_zone", `Shared zone ${zoneId} does not exist`, 404);
+  return zone;
+}
+
+function getOwnedZoneFrom(zones: ZoneState[], zoneId: string, seatId: SeatId): ZoneState {
+  const zone = zones.find((candidate) => candidate.id === zoneId && candidate.ownerSeatId === seatId);
+  if (!zone) throw new GameError("unknown_zone", `Seat zone ${zoneId} does not exist`, 404);
+  return zone;
 }

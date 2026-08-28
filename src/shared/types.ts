@@ -11,6 +11,8 @@ export type GenericActionName =
   | "deal"
   | "draw"
   | "move"
+  | "play_next"
+  | "collect"
   | "give"
   | "reveal"
   | "shuffle"
@@ -23,12 +25,16 @@ export interface ZoneConfig {
   id: string;
   kind: "stock" | "discard" | "pile";
   facing: "up" | "down";
+  scope: "shared" | "seat";
+  visibility: "public" | "owner" | "hidden";
+  ordered: boolean;
 }
 
 export interface GameContract {
   name: string;
   gamePrompt: string;
   startingHandSize: number;
+  startingZoneId: "hand" | string;
   turnOrder: "alternating" | "manual";
   zones: ZoneConfig[];
   allowedActions: ActionName[];
@@ -46,6 +52,7 @@ export interface ZoneCard {
 }
 
 export interface ZoneState extends ZoneConfig {
+  ownerSeatId: SeatId | null;
   cards: ZoneCard[];
 }
 
@@ -58,6 +65,8 @@ export type TableAction =
   | { type: "deal"; zoneId: string; countPerSeat: number }
   | { type: "draw"; zoneId: string; count: number }
   | { type: "move"; cardIds: string[]; zoneId: string; face: "up" | "down" }
+  | { type: "play_next"; sourceZoneId: string; targetZoneId: string; face: "up" | "down" }
+  | { type: "collect"; sourceZoneId: string; targetZoneId: string; placement: "top" | "bottom" }
   | { type: "give"; cardIds: string[]; targetSeatId: SeatId }
   | { type: "reveal"; cardIds: string[] }
   | { type: "shuffle"; zoneId: string }
@@ -70,6 +79,8 @@ export type TableEventType =
   | "cards_dealt"
   | "cards_drawn"
   | "cards_moved"
+  | "next_card_played"
+  | "pile_collected"
   | "cards_given"
   | "cards_revealed"
   | "zone_shuffled"
@@ -87,7 +98,7 @@ export interface TableEvent {
 }
 
 export interface TableState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   roomId: string;
   revision: number;
   contract: GameContract;
@@ -121,8 +132,25 @@ export interface CardView {
 export interface PublicZoneView {
   zoneId: string;
   kind: ZoneConfig["kind"];
+  ordered: boolean;
   cardCount: number;
   cards: PublicCardView[];
+}
+
+export interface SeatZoneView {
+  zoneId: string;
+  kind: ZoneConfig["kind"];
+  visibility: Extract<ZoneConfig["visibility"], "owner" | "hidden">;
+  ordered: boolean;
+  cardCount: number;
+  cards: PublicCardView[];
+}
+
+export interface OpponentZoneView {
+  zoneId: string;
+  kind: ZoneConfig["kind"];
+  ordered: boolean;
+  cardCount: number;
 }
 
 export interface TableView {
@@ -132,8 +160,8 @@ export interface TableView {
   activeSeatId: SeatId | null;
   status: TableState["status"];
   winnerSeatId: SeatId | null;
-  self: { seatId: SeatId; hand: CardView[] };
-  opponent: { seatId: SeatId; cardCount: number };
+  self: { seatId: SeatId; hand: CardView[]; zones: SeatZoneView[] };
+  opponent: { seatId: SeatId; cardCount: number; zones: OpponentZoneView[] };
   publicZones: PublicZoneView[];
   recentEvents: TableEvent[];
 }

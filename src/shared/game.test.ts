@@ -55,6 +55,10 @@ describe("contracts", () => {
     expect(GAME_PRESETS.map((preset) => preset.id)).toEqual(["go_fish", "crazy_eights", "war", "open_table"]);
     for (const preset of GAME_PRESETS) expect(validateContract(preset.contract)).toEqual(preset.contract);
   });
+
+  it("requires opening cards aimed at a seat-owned zone", () => {
+    expect(() => validateContract({ ...DEFAULT_FREE_PLAY_CONTRACT, startingZoneId: "discard" })).toThrowError("opening deal");
+  });
 });
 
 describe("generic reducer", () => {
@@ -178,6 +182,32 @@ describe("generic reducer", () => {
     const after = next.zones.find((zone) => zone.id === "stock")?.cards.map(({ card }) => card.id).sort();
     expect(after).toEqual(before);
   });
+
+  it("plays the next hidden card and collects a public pile into an ordered personal zone", () => {
+    const war = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
+    const initial = table(war);
+    expect(initial.seats.every((seat) => seat.hand.length === 0)).toBe(true);
+    expect(initial.zones.filter((zone) => zone.id === "deck").map((zone) => zone.cards.length)).toEqual([26, 26]);
+
+    const played = applyAction(
+      initial,
+      "host",
+      { actionId: "war-play", expectedRevision: 0, action: { type: "play_next", sourceZoneId: "deck", targetZoneId: "battle", face: "up" } },
+      dependencies(),
+    );
+    expect(played.zones.find((zone) => zone.id === "deck" && zone.ownerSeatId === "host")?.cards).toHaveLength(25);
+    expect(played.zones.find((zone) => zone.id === "battle")?.cards).toHaveLength(1);
+
+    const collected = applyAction(
+      played,
+      "host",
+      { actionId: "war-collect", expectedRevision: 1, action: { type: "collect", sourceZoneId: "battle", targetZoneId: "deck", placement: "bottom" } },
+      dependencies(3_000),
+    );
+    expect(collected.zones.find((zone) => zone.id === "deck" && zone.ownerSeatId === "host")?.cards).toHaveLength(26);
+    expect(collected.zones.find((zone) => zone.id === "battle")?.cards).toHaveLength(0);
+    expect(countCards(collected)).toBe(52);
+  });
 });
 
 describe("seat projection", () => {
@@ -191,6 +221,19 @@ describe("seat projection", () => {
     }
     const stockCard = initial.zones.find((zone) => zone.id === "stock")?.cards[0].card;
     expect(view.publicZones[0].cards[0]).toEqual({ id: stockCard?.id, face: "down" });
+  });
+
+  it("hides an ordered personal deck from its owner and the opponent", () => {
+    const war = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
+    const initial = table(war);
+    const hostView = projectTable(initial, "host");
+    expect(hostView.self.hand).toEqual([]);
+    expect(hostView.self.zones).toEqual([{ zoneId: "deck", kind: "pile", visibility: "hidden", ordered: true, cardCount: 26, cards: [] }]);
+    expect(hostView.opponent.zones).toEqual([{ zoneId: "deck", kind: "pile", ordered: true, cardCount: 26 }]);
+    const serialized = JSON.stringify(hostView);
+    for (const zone of initial.zones.filter((candidate) => candidate.id === "deck")) {
+      for (const { card } of zone.cards) expect(serialized).not.toContain(JSON.stringify(card.id));
+    }
   });
 });
 

@@ -77,7 +77,7 @@ export function registerLobbyTools(context: WebMcpContext, handlers: LobbyToolHa
         startingHandSize: { type: "integer", minimum: 0, maximum: 26 },
         turnOrder: { type: "string", enum: ["alternating", "manual"] },
         includeDiscard: { type: "boolean" },
-        allowedActions: stringArray(["deal", "draw", "move", "give", "reveal", "shuffle", "announce", "react", "end_turn"]),
+        allowedActions: stringArray(["deal", "draw", "move", "play_next", "collect", "give", "reveal", "shuffle", "announce", "react", "end_turn"]),
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, untrustedContentHint: true },
@@ -87,8 +87,10 @@ export function registerLobbyTools(context: WebMcpContext, handlers: LobbyToolHa
       const zones = input.includeDiscard === undefined
         ? current.zones
         : input.includeDiscard
-          ? [{ id: "stock", kind: "stock" as const, facing: "down" as const }, { id: "discard", kind: "discard" as const, facing: "up" as const }]
-          : [{ id: "stock", kind: "stock" as const, facing: "down" as const }];
+          ? current.zones.some((zone) => zone.id === "discard")
+            ? current.zones
+            : [...current.zones, { id: "discard", kind: "discard" as const, facing: "up" as const, scope: "shared" as const, visibility: "public" as const, ordered: true }]
+          : current.zones.filter((zone) => zone.id !== "discard");
       const next = validateContract({
         ...current,
         ...(input.name === undefined ? {} : { name: input.name }),
@@ -121,7 +123,7 @@ export function registerTableTools(context: WebMcpContext, handlers: TableToolHa
   register(context, signal, {
     name: "inspect_table",
     title: "Inspect the card table",
-    description: "Read your private hand, public zones, turn state, rules, and recent public events.",
+    description: "Read your private hand, personal zones, public zones, turn state, rules, and recent public events.",
     inputSchema: emptySchema(),
     annotations: { readOnlyHint: true, destructiveHint: false, untrustedContentHint: true },
     execute: () => bounded(viewSummary(handlers.getView())),
@@ -137,6 +139,12 @@ export function registerTableTools(context: WebMcpContext, handlers: TableToolHa
   if (allowed.has("move")) registerAction(context, signal, handlers, "move_cards", "Move cards", "Move cards from your hand to a public pile, face up or face down.", {
     type: "object", additionalProperties: false, properties: { cardIds: cardIdsSchema, zoneId: zoneSchema, face: { type: "string", enum: ["up", "down"] } }, required: ["cardIds", "zoneId", "face"],
   }, (input) => ({ type: "move", cardIds: input.cardIds as string[], zoneId: String(input.zoneId), face: input.face as "up" | "down" }));
+  if (allowed.has("play_next")) registerAction(context, signal, handlers, "play_next_card", "Play the next card", "Move the next card from one of your ordered personal piles to a public pile without choosing or inspecting it first.", {
+    type: "object", additionalProperties: false, properties: { sourceZoneId: zoneSchema, targetZoneId: zoneSchema, face: { type: "string", enum: ["up", "down"] } }, required: ["sourceZoneId", "targetZoneId", "face"],
+  }, (input) => ({ type: "play_next", sourceZoneId: String(input.sourceZoneId), targetZoneId: String(input.targetZoneId), face: input.face as "up" | "down" }));
+  if (allowed.has("collect")) registerAction(context, signal, handlers, "collect_pile", "Collect a public pile", "Move every card from a public pile to the top or bottom of one of your ordered personal piles.", {
+    type: "object", additionalProperties: false, properties: { sourceZoneId: zoneSchema, targetZoneId: zoneSchema, placement: { type: "string", enum: ["top", "bottom"] } }, required: ["sourceZoneId", "targetZoneId", "placement"],
+  }, (input) => ({ type: "collect", sourceZoneId: String(input.sourceZoneId), targetZoneId: String(input.targetZoneId), placement: input.placement as "top" | "bottom" }));
   if (allowed.has("give")) registerAction(context, signal, handlers, "give_cards", "Give cards", "Give cards from your hand to the other seat.", {
     type: "object", additionalProperties: false, properties: { cardIds: cardIdsSchema }, required: ["cardIds"],
   }, (input) => ({ type: "give", cardIds: input.cardIds as string[], targetSeatId: handlers.getView().opponent.seatId }));
@@ -198,6 +206,7 @@ function contractSummary(contract: GameContract) {
     name: contract.name,
     gamePrompt: contract.gamePrompt,
     startingHandSize: contract.startingHandSize,
+    startingZoneId: contract.startingZoneId,
     turnOrder: contract.turnOrder,
     zones: contract.zones,
     allowedActions: contract.allowedActions,
@@ -212,8 +221,9 @@ function viewSummary(view: TableView) {
     activeSeatId: view.activeSeatId,
     yourSeatId: view.self.seatId,
     yourHand: view.self.hand.map((card) => ({ id: card.id, rank: card.rank, suit: card.suit })),
-    opponent: { seatId: view.opponent.seatId, cardCount: view.opponent.cardCount },
-    publicZones: view.publicZones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
+    yourZones: view.self.zones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, visibility: zone.visibility, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
+    opponent: { seatId: view.opponent.seatId, handCardCount: view.opponent.cardCount, zones: view.opponent.zones },
+    publicZones: view.publicZones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
     rules: contractSummary(view.contract),
     recentEvents: view.recentEvents.slice(-5).map(eventSummary),
   };

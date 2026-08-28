@@ -10,6 +10,8 @@ import {
   type TableEvent,
   type TableState,
   type TableView,
+  type ZoneConfig,
+  type ZoneState,
 } from "../shared";
 import { CryptoRandomSource, secureHashEqual } from "./crypto";
 
@@ -205,7 +207,7 @@ export class GameRoom extends DurableObject<Env> {
 
   private loadState(): TableState | null {
     const rows = this.ctx.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").toArray();
-    return rows[0] ? (JSON.parse(rows[0].state_json) as TableState) : null;
+    return rows[0] ? normalizeState(JSON.parse(rows[0].state_json) as TableState | LegacyTableState) : null;
   }
 
   private persistState(state: TableState, events: TableEvent[]): void {
@@ -252,6 +254,39 @@ export class GameRoom extends DurableObject<Env> {
     }
     await this.ctx.storage.setAlarm(state.expiresAt);
   }
+}
+
+type LegacyZoneConfig = Omit<ZoneConfig, "scope" | "visibility" | "ordered">;
+type LegacyZoneState = LegacyZoneConfig & Omit<ZoneState, keyof ZoneConfig | "ownerSeatId">;
+interface LegacyTableState extends Omit<TableState, "schemaVersion" | "contract" | "zones"> {
+  schemaVersion: 1;
+  contract: Omit<GameContract, "startingZoneId" | "zones"> & { zones: LegacyZoneConfig[] };
+  zones: LegacyZoneState[];
+}
+
+function normalizeState(state: TableState | LegacyTableState): TableState {
+  if (state.schemaVersion === 2) return state;
+  return {
+    ...state,
+    schemaVersion: 2,
+    contract: {
+      ...state.contract,
+      startingZoneId: "hand",
+      zones: state.contract.zones.map((zone) => ({
+        ...zone,
+        scope: "shared",
+        visibility: "public",
+        ordered: true,
+      })),
+    },
+    zones: state.zones.map((zone) => ({
+      ...zone,
+      scope: "shared",
+      visibility: "public",
+      ordered: true,
+      ownerSeatId: null,
+    })),
+  };
 }
 
 interface SocketAttachment {
