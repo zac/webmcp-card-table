@@ -178,10 +178,6 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
-  async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
-    socket.close(code, reason);
-  }
-
   async alarm(): Promise<void> {
     const state = this.loadState();
     if (!state) return;

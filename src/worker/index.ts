@@ -173,6 +173,7 @@ function errorResponse(error: unknown): Response {
 }
 
 function withSecurityHeaders(response: Response): Response {
+  if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "no-referrer");
