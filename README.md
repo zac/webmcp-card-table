@@ -117,6 +117,8 @@ pnpm deploy
 
 The Worker and Durable Object use the internal name `webmcp-card-table`. The production build serves the React assets and Worker APIs from the same origin.
 
+Cloudflare Workers Builds is connected to `zac/webmcp-card-table`. A push to `main` runs `pnpm check` and deploys with the repository's Wrangler configuration; preview-branch builds are disabled.
+
 ## Repository map
 
 - `src/shared`: contracts, presets, deck, reducer, projections, and unit tests
