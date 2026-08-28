@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Reaction, SeatId, TableAction, TableEvent, TableView } from "../shared";
-import { ApiError, fetchTable, redeemInvite, submitTableAction } from "./api";
+import { ApiError, fetchTable, redeemInvite, rememberSeat, seatForRoom, submitTableAction } from "./api";
 import { PlayingCard } from "./Card";
 import { SiteHeader } from "./Lobby";
 import { activeModelContext, registerTableTools } from "./webmcp";
@@ -40,15 +40,18 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
     if (loaded.current) return;
     loaded.current = true;
     const controller = new AbortController();
-    const hash = window.location.hash;
-    const inviteToken = hash.startsWith("#invite=") ? hash.slice("#invite=".length) : null;
-    if (inviteToken) window.history.replaceState(window.history.state, "", `/table/${roomId}`);
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const inviteToken = fragment.get("invite");
+    const selectedSeat = fragment.get("seat");
+    if (selectedSeat === "host" || selectedSeat === "guest") rememberSeat(roomId, selectedSeat);
+    if (inviteToken || selectedSeat) window.history.replaceState(window.history.state, "", `/table/${roomId}`);
 
     async function load() {
       try {
         const nextView = inviteToken
           ? (await redeemInvite(roomId, inviteToken, controller.signal)).view
           : initialView ?? (await fetchTable(roomId, controller.signal));
+        rememberSeat(roomId, nextView.self.seatId);
         setView(nextView);
         revision.current = nextView.revision;
       } catch (reason) {
@@ -69,7 +72,8 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       if (disposed) return;
       setConnection("connecting");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${roomId}/socket`);
+      const selectedSeat = seatForRoom(roomId) ?? view.self.seatId;
+      socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${roomId}/socket?seat=${selectedSeat}`);
       socket.addEventListener("open", () => {
         setConnection("live");
         socket?.send(JSON.stringify({ type: "hello", lastRevision: revision.current }));
@@ -174,7 +178,7 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
           <div className="handoff-actions">
             {knownInviteUrl && <CopyButton label="Copy invite" copiedLabel="Invite copied" text={knownInviteUrl} />}
             {knownInviteUrl && <CopyButton label="Guest Codex prompt" copiedLabel="Guest prompt copied" text={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
-            <CopyButton label="Play with Codex" copiedLabel="Codex prompt copied" text={makePlayerPrompt(view, cleanTableUrl, view.self.seatId)} />
+            <CopyButton label="Play with Codex" copiedLabel="Codex prompt copied" text={makePlayerPrompt(view, `${cleanTableUrl}#seat=${view.self.seatId}`, view.self.seatId)} />
           </div>
         </div>
       </section>

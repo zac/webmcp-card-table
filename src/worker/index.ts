@@ -1,4 +1,4 @@
-import type { TableView } from "../shared";
+import type { SeatId, TableView } from "../shared";
 import { hashToken, randomToken } from "./crypto";
 import { GameRoom, type RpcResult } from "./game-room";
 import {
@@ -12,7 +12,8 @@ import {
 
 export { GameRoom };
 
-const SESSION_COOKIE = "card_table_session";
+const LEGACY_SESSION_COOKIE = "card_table_session";
+const SEAT_HEADER = "x-card-table-seat";
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -92,7 +93,7 @@ async function createRoom(request: Request, url: URL, env: Env): Promise<Respons
     view,
     inviteUrl: `${url.origin}/table/${roomId}#invite=${inviteToken}`,
   };
-  return jsonWithCookie(body, roomId, sessionToken, 201);
+  return jsonWithCookie(body, roomId, "host", sessionToken, 201);
 }
 
 async function redeemInvite(request: Request, roomId: string, env: Env): Promise<Response> {
@@ -102,27 +103,27 @@ async function redeemInvite(request: Request, roomId: string, env: Env): Promise
   const sessionToken = randomToken();
   const sessionHash = await hashToken(sessionToken);
   const view = unwrap(await roomStub(env, roomId).redeemInvite(inviteHash, sessionHash, Date.now()));
-  return jsonWithCookie({ roomId, view }, roomId, sessionToken, 200);
+  return jsonWithCookie({ roomId, view }, roomId, "guest", sessionToken, 200);
 }
 
 async function getView(request: Request, roomId: string, env: Env): Promise<Response> {
-  const sessionHash = await sessionHashFromRequest(request);
-  return Response.json(unwrap(await roomStub(env, roomId).getView(sessionHash)));
+  const session = await sessionFromRequest(request, roomId);
+  return Response.json(unwrap(await roomStub(env, roomId).getView(session.hash, session.seatId)));
 }
 
 async function performAction(request: Request, roomId: string, env: Env): Promise<Response> {
-  const sessionHash = await sessionHashFromRequest(request);
+  const session = await sessionFromRequest(request, roomId);
   const envelope = parseActionEnvelope(await readJson(request));
-  return Response.json(unwrap(await roomStub(env, roomId).performAction(sessionHash, envelope, Date.now())));
+  return Response.json(unwrap(await roomStub(env, roomId).performAction(session.hash, session.seatId, envelope, Date.now())));
 }
 
 async function connectSocket(request: Request, roomId: string, env: Env): Promise<Response> {
   if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     throw new RequestError("upgrade_required", "A WebSocket upgrade is required", 426);
   }
-  const sessionHash = await sessionHashFromRequest(request);
+  const session = await sessionFromRequest(request, roomId);
   const internalRequest = new Request("https://room.internal/socket", {
-    headers: { upgrade: "websocket", "x-session-hash": sessionHash },
+    headers: { upgrade: "websocket", "x-session-hash": session.hash, "x-seat-id": session.seatId ?? "" },
   });
   return roomStub(env, roomId).fetch(internalRequest);
 }
@@ -136,24 +137,55 @@ function unwrap<T>(result: RpcResult<T>): T {
   throw new RequestError(result.error.code, result.error.message, result.error.status);
 }
 
-async function sessionHashFromRequest(request: Request): Promise<string> {
+async function sessionFromRequest(request: Request, roomId: string): Promise<{ hash: string; seatId: SeatId | null }> {
   const cookieHeader = request.headers.get("cookie") ?? "";
-  const token = cookieHeader
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
-    ?.slice(SESSION_COOKIE.length + 1);
+  const cookies = parseCookies(cookieHeader);
+  const requestedSeat = seatHint(request);
+  let seatId = requestedSeat;
+  let token = requestedSeat ? cookies.get(sessionCookieName(roomId, requestedSeat)) : undefined;
+
+  if (!requestedSeat) {
+    const available = (["host", "guest"] as const).filter((seat) => cookies.has(sessionCookieName(roomId, seat)));
+    if (available.length === 1) {
+      seatId = available[0];
+      token = cookies.get(sessionCookieName(roomId, available[0]));
+    } else if (available.length > 1) {
+      throw new RequestError("seat_required", "Choose the host or guest seat for this tab", 409);
+    }
+  }
+  token ??= cookies.get(LEGACY_SESSION_COOKIE);
   if (!token) throw new RequestError("unauthorized", "A valid seat session is required", 401);
-  return hashToken(token);
+  return { hash: await hashToken(token), seatId };
 }
 
-function jsonWithCookie(body: { view: TableView } & Record<string, unknown>, roomId: string, sessionToken: string, status: number): Response {
+function jsonWithCookie(body: { view: TableView } & Record<string, unknown>, roomId: string, seatId: SeatId, sessionToken: string, status: number): Response {
   const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
   headers.append(
     "set-cookie",
-    `${SESSION_COOKIE}=${sessionToken}; Path=/api/rooms/${roomId}; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`,
+    `${sessionCookieName(roomId, seatId)}=${sessionToken}; Path=/api/rooms/${roomId}; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`,
   );
   return new Response(JSON.stringify(body), { status, headers });
+}
+
+function sessionCookieName(roomId: string, seatId: SeatId): string {
+  return `card_table_${seatId}_${roomId}`;
+}
+
+function seatHint(request: Request): SeatId | null {
+  const value = request.headers.get(SEAT_HEADER) ?? new URL(request.url).searchParams.get("seat");
+  if (value === null || value === "") return null;
+  if (value === "host" || value === "guest") return value;
+  throw new RequestError("invalid_seat", "Seat selector is invalid", 400);
+}
+
+function parseCookies(header: string): Map<string, string> {
+  const cookies = new Map<string, string>();
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 1) continue;
+    cookies.set(part.slice(0, separator).trim(), part.slice(separator + 1).trim());
+  }
+  return cookies;
 }
 
 function assertSameOrigin(request: Request, url: URL): void {

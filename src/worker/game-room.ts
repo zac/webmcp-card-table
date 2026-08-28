@@ -101,20 +101,20 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
-  async getView(sessionHash: string): Promise<RpcResult<TableView>> {
+  async getView(sessionHash: string, expectedSeatId: SeatId | null = null): Promise<RpcResult<TableView>> {
     try {
       const state = this.requireState();
-      const seatId = this.authenticate(sessionHash);
+      const seatId = this.authenticate(sessionHash, expectedSeatId);
       return { ok: true, value: projectTable(state, seatId) };
     } catch (error) {
       return failure(error);
     }
   }
 
-  async performAction(sessionHash: string, envelope: ActionEnvelope, now: number): Promise<RpcResult<TableView>> {
+  async performAction(sessionHash: string, expectedSeatId: SeatId | null, envelope: ActionEnvelope, now: number): Promise<RpcResult<TableView>> {
     try {
       const current = this.requireState();
-      const seatId = this.authenticate(sessionHash);
+      const seatId = this.authenticate(sessionHash, expectedSeatId);
       const next = applyAction(current, seatId, envelope, {
         now,
         random: new CryptoRandomSource(),
@@ -138,7 +138,9 @@ export class GameRoom extends DurableObject<Env> {
     const sessionHash = request.headers.get("x-session-hash");
     if (!sessionHash) return Response.json({ error: "unauthorized" }, { status: 401 });
     try {
-      const seatId = this.authenticate(sessionHash);
+      const seatHeader = request.headers.get("x-seat-id");
+      const expectedSeatId = seatHeader === "host" || seatHeader === "guest" ? seatHeader : null;
+      const seatId = this.authenticate(sessionHash, expectedSeatId);
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       server.serializeAttachment({ seatId, lastRevision: null } satisfies SocketAttachment);
@@ -190,12 +192,15 @@ export class GameRoom extends DurableObject<Env> {
     await this.scheduleNextAlarm(state);
   }
 
-  private authenticate(sessionHash: string): SeatId {
+  private authenticate(sessionHash: string, expectedSeatId: SeatId | null = null): SeatId {
     const sessions = this.ctx.storage.sql.exec<{ session_hash: string; seat_id: SeatId }>(
       "SELECT session_hash, seat_id FROM sessions",
     ).toArray();
     const session = sessions.find((candidate) => secureHashEqual(sessionHash, candidate.session_hash));
     if (!session) throw new GameError("unauthorized", "A valid seat session is required", 401);
+    if (expectedSeatId && session.seat_id !== expectedSeatId) {
+      throw new GameError("wrong_seat_session", `This tab is assigned to the ${expectedSeatId} seat but its cookie is not`, 401);
+    }
     return session.seat_id;
   }
 

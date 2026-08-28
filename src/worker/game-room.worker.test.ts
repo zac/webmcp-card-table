@@ -48,9 +48,9 @@ describe("GameRoom", () => {
       expectedRevision: 0,
       action: { type: "end_turn" as const },
     };
-    const accepted = await stub.performAction("aG9zdA", action, Date.now());
+    const accepted = await stub.performAction("aG9zdA", "host", action, Date.now());
     expect(accepted.ok && accepted.value.revision).toBe(1);
-    const duplicate = await stub.performAction("aG9zdA", { ...action, expectedRevision: 1 }, Date.now());
+    const duplicate = await stub.performAction("aG9zdA", "host", { ...action, expectedRevision: 1 }, Date.now());
     expect(duplicate.ok).toBe(false);
     if (!duplicate.ok) expect(duplicate.error.code).toBe("duplicate_action");
   });
@@ -75,6 +75,7 @@ describe("GameRoom", () => {
     const updatePromise = nextSocketMessage(socket);
     await stub.performAction(
       "aG9zdA",
+      "host",
       { actionId: "socket-action", expectedRevision: 0, action: { type: "react", reaction: "thinking" } },
       Date.now(),
     );
@@ -90,6 +91,7 @@ describe("GameRoom", () => {
     const resumedUpdate = nextSocketMessage(socket);
     await stub.performAction(
       "aG9zdA",
+      "host",
       { actionId: "after-hibernate", expectedRevision: 1, action: { type: "react", reaction: "well_played" } },
       Date.now(),
     );
@@ -126,13 +128,14 @@ describe("room HTTP API", () => {
     expect(body.view.self.seatId).toBe("host");
     expect(body.inviteUrl).toContain(`#invite=`);
     const cookie = response.headers.get("set-cookie");
+    expect(cookie).toContain(`card_table_host_${body.roomId}=`);
     expect(cookie).toContain(`Path=/api/rooms/${body.roomId}`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Secure");
     expect(cookie).toContain("SameSite=Strict");
 
     const viewResponse = await exports.default.fetch(`http://example.com/api/rooms/${body.roomId}/view`, {
-      headers: { cookie: cookie ?? "" },
+      headers: { cookie: cookie ?? "", "x-card-table-seat": "host" },
     });
     expect(viewResponse.status).toBe(200);
   });
@@ -173,7 +176,44 @@ describe("room HTTP API", () => {
     });
     expect(response.status).toBe(401);
   });
+
+  it("keeps host and guest sessions usable in one shared cookie jar", async () => {
+    const created = await exports.default.fetch("http://example.com/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contract: DEFAULT_FREE_PLAY_CONTRACT }),
+    });
+    const room = await created.json<{ roomId: string; inviteUrl: string }>();
+    const hostCookie = cookiePair(created.headers.get("set-cookie"));
+    const inviteToken = new URL(room.inviteUrl).hash.slice("#invite=".length);
+    const redeemed = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/redeem`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: hostCookie },
+      body: JSON.stringify({ inviteToken }),
+    });
+    const guestCookie = cookiePair(redeemed.headers.get("set-cookie"));
+    const sharedCookies = `${hostCookie}; ${guestCookie}`;
+
+    const hostView = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/view`, {
+      headers: { cookie: sharedCookies, "x-card-table-seat": "host" },
+    });
+    const guestView = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/view`, {
+      headers: { cookie: sharedCookies, "x-card-table-seat": "guest" },
+    });
+    expect((await hostView.json<{ self: { seatId: string } }>()).self.seatId).toBe("host");
+    expect((await guestView.json<{ self: { seatId: string } }>()).self.seatId).toBe("guest");
+
+    const ambiguous = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/view`, {
+      headers: { cookie: sharedCookies },
+    });
+    expect(ambiguous.status).toBe(409);
+    expect(await ambiguous.json<{ error: string }>()).toMatchObject({ error: "seat_required" });
+  });
 });
+
+function cookiePair(setCookie: string | null): string {
+  return setCookie?.split(";", 1)[0] ?? "";
+}
 
 function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
