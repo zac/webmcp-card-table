@@ -1,0 +1,190 @@
+import {
+  REACTIONS,
+  RANKS,
+  validateContract,
+  type ActionEnvelope,
+  type GameContract,
+  type Reaction,
+  type SeatId,
+  type TableAction,
+} from "../shared";
+
+const SAFE_ID = /^[A-Za-z0-9_-]{8,80}$/;
+const ROOM_ID = /^[A-Za-z0-9_-]{16,80}$/;
+const MAX_BODY_BYTES = 32 * 1024;
+
+export class RequestError extends Error {
+  constructor(public readonly code: string, message: string, public readonly status = 400) {
+    super(message);
+    this.name = "RequestError";
+  }
+}
+
+export async function readJson(request: Request): Promise<unknown> {
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    throw new RequestError("invalid_content_type", "Send an application/json request body", 415);
+  }
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (declaredLength > MAX_BODY_BYTES) throw new RequestError("body_too_large", "Request body is too large", 413);
+  if (!request.body) throw new RequestError("missing_body", "A JSON request body is required");
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.byteLength;
+    if (length > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new RequestError("body_too_large", "Request body is too large", 413);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch {
+    throw new RequestError("invalid_json", "Request body is not valid JSON");
+  }
+}
+
+export function parseCreateRoom(value: unknown): { mode: "practice" } | { mode: "free_play"; contract: GameContract } {
+  const object = requireObject(value);
+  if (object.mode === "practice") return { mode: "practice" };
+  if (object.mode !== "free_play") throw new RequestError("invalid_mode", "Mode must be practice or free_play");
+  return { mode: "free_play", contract: parseContract(object.contract) };
+}
+
+export function parseActionEnvelope(value: unknown): ActionEnvelope {
+  const object = requireObject(value);
+  if (typeof object.actionId !== "string" || !SAFE_ID.test(object.actionId)) {
+    throw new RequestError("invalid_action_id", "actionId must contain 8 to 80 URL-safe characters");
+  }
+  if (!Number.isInteger(object.expectedRevision) || (object.expectedRevision as number) < 0) {
+    throw new RequestError("invalid_revision", "expectedRevision must be a non-negative integer");
+  }
+  return {
+    actionId: object.actionId,
+    expectedRevision: object.expectedRevision as number,
+    action: parseAction(object.action),
+  };
+}
+
+export function assertRoomId(value: string): string {
+  if (!ROOM_ID.test(value)) throw new RequestError("invalid_room_id", "Room ID is invalid", 404);
+  return value;
+}
+
+export function assertInviteToken(value: unknown): string {
+  if (typeof value !== "string" || !SAFE_ID.test(value)) {
+    throw new RequestError("invalid_invite", "Invite token is invalid");
+  }
+  return value;
+}
+
+function parseContract(value: unknown): GameContract {
+  const object = requireObject(value);
+  if (!Array.isArray(object.zones) || !Array.isArray(object.allowedActions)) {
+    throw new RequestError("invalid_contract", "Contract zones and allowedActions must be arrays");
+  }
+  const contract: GameContract = {
+    kind: object.kind === "free_play" ? "free_play" : object.kind === "go_fish" ? "go_fish" : invalid("Contract kind is invalid"),
+    name: requireString(object.name, "name"),
+    objective: requireString(object.objective, "objective"),
+    startingHandSize: requireNumber(object.startingHandSize, "startingHandSize"),
+    turnOrder:
+      object.turnOrder === "alternating" || object.turnOrder === "manual"
+        ? object.turnOrder
+        : invalid("Contract turnOrder is invalid"),
+    zones: object.zones.map((zoneValue) => {
+      const zone = requireObject(zoneValue);
+      return {
+        id: requireString(zone.id, "zone.id"),
+        kind:
+          zone.kind === "stock" || zone.kind === "discard" || zone.kind === "pile"
+            ? zone.kind
+            : invalid("Zone kind is invalid"),
+        facing: zone.facing === "up" || zone.facing === "down" ? zone.facing : invalid("Zone facing is invalid"),
+      };
+    }),
+    allowedActions: object.allowedActions.map((action) => requireString(action, "allowedActions")) as GameContract["allowedActions"],
+    winCondition: requireString(object.winCondition, "winCondition"),
+    ...(object.note === undefined ? {} : { note: requireString(object.note, "note") }),
+  };
+  if (contract.kind !== "free_play") throw new RequestError("invalid_contract", "Custom contracts must use free_play");
+  return validateContract(contract);
+}
+
+function parseAction(value: unknown): TableAction {
+  const action = requireObject(value);
+  switch (action.type) {
+    case "draw":
+      return { type: "draw", zoneId: requireString(action.zoneId, "zoneId"), count: requireNumber(action.count, "count") };
+    case "move":
+      return {
+        type: "move",
+        cardIds: requireStringArray(action.cardIds, "cardIds"),
+        zoneId: requireString(action.zoneId, "zoneId"),
+        face: action.face === "up" || action.face === "down" ? action.face : invalid("face must be up or down"),
+      };
+    case "give":
+      return { type: "give", cardIds: requireStringArray(action.cardIds, "cardIds"), targetSeatId: parseSeatId(action.targetSeatId) };
+    case "reveal":
+      return { type: "reveal", cardIds: requireStringArray(action.cardIds, "cardIds") };
+    case "shuffle":
+      return { type: "shuffle", zoneId: requireString(action.zoneId, "zoneId") };
+    case "react": {
+      const reaction = requireString(action.reaction, "reaction") as Reaction;
+      if (!(REACTIONS as readonly string[]).includes(reaction)) throw new RequestError("invalid_reaction", "Reaction is invalid");
+      return { type: "react", reaction };
+    }
+    case "end_turn":
+      return { type: "end_turn" };
+    case "request_rank": {
+      const rank = requireString(action.rank, "rank");
+      if (!(RANKS as readonly string[]).includes(rank)) throw new RequestError("invalid_rank", "Rank is invalid");
+      return { type: "request_rank", rank: rank as (typeof RANKS)[number] };
+    }
+    default:
+      throw new RequestError("invalid_action", "Action type is invalid");
+  }
+}
+
+function parseSeatId(value: unknown): SeatId {
+  if (value === "host" || value === "guest" || value === "human" || value === "house") return value;
+  throw new RequestError("invalid_seat", "Seat ID is invalid");
+}
+
+function requireObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new RequestError("invalid_request", "Expected a JSON object");
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new RequestError("invalid_request", `${field} must be a string`);
+  return value;
+}
+
+function requireNumber(value: unknown, field: string): number {
+  if (typeof value !== "number") throw new RequestError("invalid_request", `${field} must be a number`);
+  return value;
+}
+
+function requireStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new RequestError("invalid_request", `${field} must be an array of strings`);
+  }
+  return value;
+}
+
+function invalid(message: string): never {
+  throw new RequestError("invalid_request", message);
+}

@@ -12,6 +12,7 @@
     "deploy:dry": "pnpm build && wrangler deploy --dry-run",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:worker": "vitest run --config vitest.worker.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
     "types": "wrangler types"
@@ -21,7 +22,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/vitest-plugin": "1.1.1",
     "@cloudflare/workers-types": "5.20260828.1",
     "@eslint/js": "10.0.1",
     "@types/node": "26.4.0",
