@@ -3,9 +3,7 @@ import type { CardView, PublicCardView, Suit } from "../shared";
 interface CardProps {
   card?: CardView | PublicCardView;
   selected?: boolean;
-  compact?: boolean;
   onClick?: () => void;
-  motion?: { origin: "self" | "opponent"; flip: boolean };
 }
 
 const SUIT_MARKS: Record<Suit, string> = {
@@ -15,10 +13,10 @@ const SUIT_MARKS: Record<Suit, string> = {
   spades: "♠",
 };
 
-export function PlayingCard({ card, selected = false, compact = false, onClick, motion }: CardProps) {
+export function PlayingCard({ card, selected = false, onClick }: CardProps) {
   const visibleCard = isVisibleCard(card) ? card : null;
   const hidden = !visibleCard;
-  const className = `playing-card${hidden ? " card-back" : ""}${selected ? " selected" : ""}${compact ? " compact" : ""}${motion ? ` card-arrival from-${motion.origin}${motion.flip ? " flip-up" : ""}` : ""}`;
+  const className = `playing-card${hidden ? " card-back" : ""}${selected ? " selected" : ""}`;
   const front = visibleCard ? (
     <span className="card-side card-front" aria-hidden="true">
       <span className={`card-corner ${isRed(visibleCard.suit) ? "red" : ""}`}>
@@ -35,11 +33,12 @@ export function PlayingCard({ card, selected = false, compact = false, onClick, 
     </span>
   );
   const label = visibleCard ? `${visibleCard.rank} of ${visibleCard.suit}` : "Face-down card";
+  const data = { "data-card-visual": "", ...(card?.id ? { "data-card-id": card.id } : {}) };
 
   if (onClick) {
-    return <button type="button" className={className} aria-pressed={selected} aria-label={label} onClick={onClick}>{content}</button>;
+    return <button type="button" className={className} aria-pressed={selected} aria-label={label} onClick={onClick} {...data}>{content}</button>;
   }
-  return <div className={className} role="img" aria-label={label}>{content}</div>;
+  return <div className={className} role="img" aria-label={label} {...data}>{content}</div>;
 }
 
 function isVisibleCard(card: CardView | PublicCardView | undefined): card is CardView | Extract<PublicCardView, { face: "up" }> {

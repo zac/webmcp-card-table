@@ -16,7 +16,7 @@ Presets are not hard-coded game modes. They only prefill a normal table contract
 
 Direct controls stay on the felt. Clicking stock offers draw, deal, and shuffle when the contract allows them. Selecting hand cards and clicking a public pile offers valid play actions. Ordered personal piles expose next-card play, collection, and shuffle in place. Public zones can belong to the table or to one seat, which gives War a face-up card slot and face-down tie pile for each player. The side panel is reserved for turn state, the game brief, announcements, reactions, and history.
 
-Card motion follows committed revisions, including actions made through WebMCP: plays travel from the acting seat and face-up cards turn over as they settle, while collected piles return toward the winner's deck. The interface skips these transitions when the browser requests reduced motion.
+Card motion follows committed revisions, including actions made through WebMCP. The rendered card travels between its measured source and destination, turns over in flight when its face changes, and lands at the same size used everywhere else on the table. Existing cards reflow to make room as a battle or war pile grows; collection moves the visible cards themselves into the winner's deck rather than substituting a fading effect. The interface skips these transitions when the browser requests reduced motion.
 
 ## Why WebMCP matters here
 
