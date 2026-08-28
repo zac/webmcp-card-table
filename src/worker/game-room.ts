@@ -122,11 +122,62 @@ export class GameRoom extends DurableObject<Env> {
       const priorEventIds = new Set(current.events.map((event) => event.id));
       const newEvents = next.events.filter((event) => !priorEventIds.has(event.id));
       this.ctx.storage.transactionSync(() => this.persistState(next, newEvents));
+      this.broadcastUpdate(next, newEvents);
       await this.scheduleNextAlarm(next);
       return { ok: true, value: projectTable(next, seatId) };
     } catch (error) {
       return failure(error);
     }
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      return Response.json({ error: "upgrade_required" }, { status: 426 });
+    }
+    const sessionHash = request.headers.get("x-session-hash");
+    if (!sessionHash) return Response.json({ error: "unauthorized" }, { status: 401 });
+    try {
+      const seatId = this.authenticate(sessionHash);
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      server.serializeAttachment({ seatId, lastRevision: null } satisfies SocketAttachment);
+      this.ctx.acceptWebSocket(server, [seatId]);
+      return new Response(null, { status: 101, webSocket: client });
+    } catch (error) {
+      const result = failure(error);
+      return Response.json(result.error, { status: result.error.status });
+    }
+  }
+
+  async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string): Promise<void> {
+    if (typeof message !== "string" || message.length > 1_024) {
+      socket.send(JSON.stringify({ type: "error", error: "invalid_message" }));
+      return;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(message) as unknown;
+    } catch {
+      socket.send(JSON.stringify({ type: "error", error: "invalid_json" }));
+      return;
+    }
+    if (!isHelloMessage(value)) {
+      socket.send(JSON.stringify({ type: "error", error: "expected_hello" }));
+      return;
+    }
+    const attachment = readAttachment(socket);
+    const state = this.requireState();
+    attachment.lastRevision = state.revision;
+    socket.serializeAttachment(attachment);
+    if (value.lastRevision !== state.revision) {
+      socket.send(JSON.stringify({ type: "snapshot", view: projectTable(state, attachment.seatId) }));
+    } else {
+      socket.send(JSON.stringify({ type: "ready", revision: state.revision }));
+    }
+  }
+
+  async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
+    socket.close(code, reason);
   }
 
   async alarm(): Promise<void> {
@@ -178,6 +229,28 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
+  private broadcastUpdate(state: TableState, events: TableEvent[]): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      try {
+        const attachment = readAttachment(socket);
+        socket.send(JSON.stringify({
+          type: "update",
+          revision: state.revision,
+          events,
+          view: projectTable(state, attachment.seatId),
+        }));
+        attachment.lastRevision = state.revision;
+        socket.serializeAttachment(attachment);
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "warn",
+          event: "socket_broadcast_failed",
+          error: error instanceof Error ? error.message : "unknown",
+        }));
+      }
+    }
+  }
+
   private async scheduleNextAlarm(state: TableState): Promise<void> {
     const candidates = [state.expiresAt, state.nextBotActionAt].filter((value): value is number => value !== null);
     if (candidates.length === 0) {
@@ -186,6 +259,25 @@ export class GameRoom extends DurableObject<Env> {
     }
     await this.ctx.storage.setAlarm(Math.min(...candidates));
   }
+}
+
+interface SocketAttachment {
+  seatId: SeatId;
+  lastRevision: number | null;
+}
+
+function readAttachment(socket: WebSocket): SocketAttachment {
+  const attachment = socket.deserializeAttachment();
+  if (!attachment || typeof attachment !== "object") throw new GameError("invalid_socket", "Socket attachment is missing", 500);
+  const value = attachment as Partial<SocketAttachment>;
+  if (typeof value.seatId !== "string") throw new GameError("invalid_socket", "Socket seat is missing", 500);
+  return { seatId: value.seatId as SeatId, lastRevision: typeof value.lastRevision === "number" ? value.lastRevision : null };
+}
+
+function isHelloMessage(value: unknown): value is { type: "hello"; lastRevision: number } {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Record<string, unknown>;
+  return message.type === "hello" && Number.isInteger(message.lastRevision) && (message.lastRevision as number) >= 0;
 }
 
 function failure(error: unknown): { ok: false; error: RpcError } {

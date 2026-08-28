@@ -116,6 +116,22 @@ describe("generic reducer", () => {
     );
   });
 
+  it("does not leak transferred card IDs into the other hand projection", () => {
+    const initial = table();
+    const cardId = initial.seats[0].hand[0].id;
+    const next = applyAction(
+      initial,
+      "host",
+      {
+        actionId: "give-0001",
+        expectedRevision: 0,
+        action: { type: "give", cardIds: [cardId], targetSeatId: "guest" },
+      },
+      dependencies(),
+    );
+    expect(JSON.stringify(projectTable(next, "host"))).not.toContain(cardId);
+  });
+
   it("shuffles without changing zone membership", () => {
     const initial = table();
     const before = initial.zones.find((zone) => zone.id === "stock")?.cards.map(({ card }) => card.id).sort();

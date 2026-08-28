@@ -1,5 +1,5 @@
 import { env, exports } from "cloudflare:workers";
-import { runInDurableObject } from "cloudflare:test";
+import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FREE_PLAY_CONTRACT } from "../shared";
 import { GameRoom } from "./game-room";
@@ -53,6 +53,48 @@ describe("GameRoom", () => {
     const duplicate = await stub.performAction("aG9zdA", { ...action, expectedRevision: 1 }, Date.now());
     expect(duplicate.ok).toBe(false);
     if (!duplicate.ok) expect(duplicate.error.code).toBe("duplicate_action");
+  });
+
+  it("resynchronizes stale sockets and streams accepted updates", async () => {
+    const stub = env.GAME_ROOM.getByName("socket-room");
+    await stub.createRoom(createInput("socket-room"));
+    const response = await stub.fetch(
+      new Request("https://room.internal/socket", {
+        headers: { upgrade: "websocket", "x-session-hash": "aG9zdA" },
+      }),
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    if (!socket) return;
+    socket.accept();
+    const snapshotPromise = nextSocketMessage(socket);
+    socket.send(JSON.stringify({ type: "hello", lastRevision: 99 }));
+    expect(await snapshotPromise).toMatchObject({ type: "snapshot", view: { revision: 0 } });
+
+    const updatePromise = nextSocketMessage(socket);
+    await stub.performAction(
+      "aG9zdA",
+      { actionId: "socket-action", expectedRevision: 0, action: { type: "react", reaction: "thinking" } },
+      Date.now(),
+    );
+    expect(await updatePromise).toMatchObject({ type: "update", revision: 1, view: { revision: 1 } });
+
+    await runInDurableObject(stub, async (_instance: GameRoom, state) => {
+      const sockets = state.getWebSockets();
+      expect(sockets).toHaveLength(1);
+      expect(sockets[0].deserializeAttachment()).toEqual({ seatId: "host", lastRevision: 1 });
+    });
+
+    await evictDurableObject(stub);
+    const resumedUpdate = nextSocketMessage(socket);
+    await stub.performAction(
+      "aG9zdA",
+      { actionId: "after-hibernate", expectedRevision: 1, action: { type: "react", reaction: "well_played" } },
+      Date.now(),
+    );
+    expect(await resumedUpdate).toMatchObject({ type: "update", revision: 2, view: { revision: 2 } });
+    socket.close(1000, "done");
   });
 });
 
@@ -115,3 +157,21 @@ describe("room HTTP API", () => {
     expect(response.status).toBe(401);
   });
 });
+
+function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Timed out waiting for a socket message")), 2_000);
+    socket.addEventListener(
+      "message",
+      (event) => {
+        clearTimeout(timeout);
+        try {
+          resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error("Invalid socket response"));
+        }
+      },
+      { once: true },
+    );
+  });
+}

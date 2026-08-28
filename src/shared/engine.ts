@@ -165,7 +165,7 @@ function applyGenericAction(
       return {
         ...base,
         type: "cards_given",
-        data: { targetSeatId: target.seatId, cardIds: cards.map((card) => card.id), count: cards.length },
+        data: { targetSeatId: target.seatId, count: cards.length },
       };
     }
     case "reveal": {
@@ -243,4 +243,3 @@ export function assertCardConservation(state: TableState): void {
   ];
   if (new Set(ids).size !== 52) throw new GameError("duplicate_card", "Every card ID must be unique", 500);
 }
-

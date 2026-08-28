@@ -63,7 +63,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
       return performAction(request, roomId, env);
     }
     if (operation === "socket" && request.method === "GET") {
-      return Response.json({ error: "not_implemented", message: "Realtime connection is not available yet" }, { status: 501 });
+      return connectSocket(request, roomId, env);
     }
   }
 
@@ -117,6 +117,17 @@ async function performAction(request: Request, roomId: string, env: Env): Promis
   const sessionHash = await sessionHashFromRequest(request);
   const envelope = parseActionEnvelope(await readJson(request));
   return Response.json(unwrap(await roomStub(env, roomId).performAction(sessionHash, envelope, Date.now())));
+}
+
+async function connectSocket(request: Request, roomId: string, env: Env): Promise<Response> {
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    throw new RequestError("upgrade_required", "A WebSocket upgrade is required", 426);
+  }
+  const sessionHash = await sessionHashFromRequest(request);
+  const internalRequest = new Request("https://room.internal/socket", {
+    headers: { upgrade: "websocket", "x-session-hash": sessionHash },
+  });
+  return roomStub(env, roomId).fetch(internalRequest);
 }
 
 function roomStub(env: Env, roomId: string): DurableObjectStub<GameRoom> {
