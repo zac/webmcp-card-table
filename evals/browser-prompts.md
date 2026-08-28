@@ -18,6 +18,13 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 4. React with “well played.”
 5. If a request would require an opponent's private hand or hidden personal pile, ask through `announce`; do not claim to know their cards.
 
+## Direct controls
+
+1. Open a hand-based table. Click stock and confirm only stock-appropriate actions appear.
+2. Select one card, click a non-stock shared pile, and confirm the menu offers face-up and face-down play for the selected card.
+3. Open War. Click your hidden deck, play its next card face up to battle, then click battle and collect it to the bottom of your deck.
+4. Confirm no card-manipulation form appears in the side panel. It should contain only turn and brief information, messages, reactions, errors, and table history.
+
 ## Invited seat
 
 1. Open the supplied one-use invite and confirm the fragment disappears after redemption.
@@ -30,7 +37,7 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 2. Copy the guest prompt into a second Codex thread that uses the same in-app browser storage.
 3. Play one face-up card from each deck. Confirm both threads retain their own seat and neither can inspect upcoming cards.
 4. Let the higher card collect the battle pile to the bottom of its deck. Confirm the winner has 27 cards, the other seat has 25, and battle is empty.
-4. Refresh the page and confirm the same seat and current revision recover.
+5. Refresh the page and confirm the same seat and current revision recover.
 
 ## Safety and ambiguity
 

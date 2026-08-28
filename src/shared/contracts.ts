@@ -112,7 +112,7 @@ export const GAME_PRESETS: GamePreset[] = [
         { id: "host_books", kind: "pile", facing: "up", scope: "shared", visibility: "public", ordered: false },
         { id: "guest_books", kind: "pile", facing: "up", scope: "shared", visibility: "public", ordered: false },
       ],
-      allowedActions: [...ALL_ACTIONS],
+      allowedActions: ["draw", "move", "give", "reveal", "shuffle", "announce", "react", "end_turn"],
     },
   },
   {
@@ -129,7 +129,7 @@ export const GAME_PRESETS: GamePreset[] = [
         { id: "stock", kind: "stock", facing: "down", scope: "shared", visibility: "public", ordered: true },
         { id: "discard", kind: "discard", facing: "up", scope: "shared", visibility: "public", ordered: true },
       ],
-      allowedActions: [...ALL_ACTIONS],
+      allowedActions: ["draw", "move", "shuffle", "announce", "react", "end_turn"],
     },
   },
   {

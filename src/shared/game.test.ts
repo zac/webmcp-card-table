@@ -53,6 +53,8 @@ describe("contracts", () => {
 
   it("ships presets as ordinary validated contracts", () => {
     expect(GAME_PRESETS.map((preset) => preset.id)).toEqual(["go_fish", "crazy_eights", "war", "open_table"]);
+    expect(GAME_PRESETS.find((preset) => preset.id === "crazy_eights")?.contract.allowedActions).toEqual(["draw", "move", "shuffle", "announce", "react", "end_turn"]);
+    expect(GAME_PRESETS.find((preset) => preset.id === "go_fish")?.contract.allowedActions).not.toContain("deal");
     for (const preset of GAME_PRESETS) expect(validateContract(preset.contract)).toEqual(preset.contract);
   });
 

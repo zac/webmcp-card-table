@@ -9,9 +9,11 @@ The product has one shape:
 1. Pick Go Fish, Crazy Eights, War, or Open Table as a starting point.
 2. Edit the plain-language game brief and optional table mechanics.
 3. Open the table and copy a one-use guest invite, a ready-made guest Codex prompt, or a prompt for Codex to play your own seat.
-4. Play with direct controls, WebMCP tools, or both. Every action uses the same reducer and server authorization path.
+4. Play by clicking cards and piles, through WebMCP tools, or both. Every action uses the same reducer and server authorization path.
 
 Presets are not hard-coded game modes. They only prefill a normal table contract. Card Table enforces ownership, privacy, revisions, zones, and optional alternating turns; the two players referee the game described in their brief.
+
+Direct controls stay on the felt. Clicking stock offers draw, deal, and shuffle when the contract allows them. Selecting hand cards and clicking a shared pile offers valid play actions. Ordered personal piles expose next-card play, collection, and shuffle in place. The side panel is reserved for turn state, the game brief, announcements, reactions, and history.
 
 ## Why WebMCP matters here
 
