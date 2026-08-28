@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   applyAction,
-  chooseHouseRank,
   createTable,
   GameError,
   projectTable,
@@ -84,7 +83,6 @@ export class GameRoom extends DurableObject<Env> {
   async redeemInvite(inviteHash: string, sessionHash: string, now: number): Promise<RpcResult<TableView>> {
     try {
       const state = this.requireState();
-      if (state.contract.kind !== "free_play") throw new GameError("no_invite", "This room does not accept invitations", 404);
       const invite = this.ctx.storage.sql.exec<{ token_hash: string; redeemed_at: number | null }>(
         "SELECT token_hash, redeemed_at FROM invite WHERE id = 1",
       ).one();
@@ -121,7 +119,6 @@ export class GameRoom extends DurableObject<Env> {
         eventId: () => crypto.randomUUID(),
       });
       const priorEventIds = new Set(current.events.map((event) => event.id));
-      setBotDeadline(next, now);
       const newEvents = next.events.filter((event) => !priorEventIds.has(event.id));
       this.ctx.storage.transactionSync(() => this.persistState(next, newEvents));
       this.broadcastUpdate(next, newEvents);
@@ -184,42 +181,9 @@ export class GameRoom extends DurableObject<Env> {
     const now = Date.now();
     if (state.expiresAt <= now) {
       state.status = "expired";
-      state.nextBotActionAt = null;
       this.ctx.storage.transactionSync(() => this.persistState(state, []));
       for (const socket of this.ctx.getWebSockets()) socket.close(4001, "Room expired");
       return;
-    }
-    if (state.nextBotActionAt !== null && state.nextBotActionAt <= now) {
-      const current = structuredClone(state);
-      try {
-        if (state.contract.kind === "go_fish" && state.activeSeatId === "house" && state.status === "active") {
-          const next = applyAction(
-            state,
-            "house",
-            {
-              actionId: crypto.randomUUID(),
-              expectedRevision: state.revision,
-              action: { type: "request_rank", rank: chooseHouseRank(state) },
-            },
-            { now, random: new CryptoRandomSource(), eventId: () => crypto.randomUUID() },
-          );
-          setBotDeadline(next, now);
-          const priorEventIds = new Set(current.events.map((event) => event.id));
-          const newEvents = next.events.filter((event) => !priorEventIds.has(event.id));
-          this.ctx.storage.transactionSync(() => this.persistState(next, newEvents));
-          this.broadcastUpdate(next, newEvents);
-          await this.scheduleNextAlarm(next);
-          return;
-        }
-      } catch (error) {
-        console.error(JSON.stringify({
-          level: "error",
-          event: "house_action_failed",
-          error: error instanceof Error ? error.message : "unknown",
-        }));
-        state.nextBotActionAt = null;
-        this.ctx.storage.transactionSync(() => this.persistState(state, []));
-      }
     }
     await this.scheduleNextAlarm(state);
   }
@@ -282,20 +246,12 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async scheduleNextAlarm(state: TableState): Promise<void> {
-    const candidates = [state.expiresAt, state.nextBotActionAt].filter((value): value is number => value !== null);
-    if (candidates.length === 0) {
+    if (state.status !== "active") {
       await this.ctx.storage.deleteAlarm();
       return;
     }
-    await this.ctx.storage.setAlarm(Math.min(...candidates));
+    await this.ctx.storage.setAlarm(state.expiresAt);
   }
-}
-
-function setBotDeadline(state: TableState, now: number): void {
-  state.nextBotActionAt =
-    state.contract.kind === "go_fish" && state.status === "active" && state.activeSeatId === "house"
-      ? now + 1_000
-      : null;
 }
 
 interface SocketAttachment {

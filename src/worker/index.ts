@@ -1,4 +1,4 @@
-import { PRACTICE_CONTRACT, type TableView } from "../shared";
+import type { TableView } from "../shared";
 import { hashToken, randomToken } from "./crypto";
 import { GameRoom, type RpcResult } from "./game-room";
 import {
@@ -76,14 +76,12 @@ async function createRoom(request: Request, url: URL, env: Env): Promise<Respons
   const roomId = randomToken(18);
   const sessionToken = randomToken();
   const sessionHash = await hashToken(sessionToken);
-  const inviteToken = createRequest.mode === "free_play" ? randomToken() : null;
-  const inviteHash = inviteToken ? await hashToken(inviteToken) : null;
-  const contract = createRequest.mode === "practice" ? PRACTICE_CONTRACT : createRequest.contract;
-  const seatIds = createRequest.mode === "practice" ? (["human", "house"] as const) : (["host", "guest"] as const);
+  const inviteToken = randomToken();
+  const inviteHash = await hashToken(inviteToken);
   const result = await roomStub(env, roomId).createRoom({
     roomId,
-    contract,
-    seatIds: [...seatIds],
+    contract: createRequest.contract,
+    seatIds: ["host", "guest"],
     hostSessionHash: sessionHash,
     inviteHash,
     now: Date.now(),
@@ -91,9 +89,8 @@ async function createRoom(request: Request, url: URL, env: Env): Promise<Respons
   const view = unwrap(result);
   const body = {
     roomId,
-    mode: createRequest.mode,
     view,
-    ...(inviteToken ? { inviteUrl: `${url.origin}/table/${roomId}#invite=${inviteToken}` } : {}),
+    inviteUrl: `${url.origin}/table/${roomId}#invite=${inviteToken}`,
   };
   return jsonWithCookie(body, roomId, sessionToken, 201);
 }

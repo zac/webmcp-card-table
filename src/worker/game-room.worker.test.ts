@@ -1,7 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FREE_PLAY_CONTRACT, PRACTICE_CONTRACT, type Card, type Rank, type TableState } from "../shared";
+import { DEFAULT_FREE_PLAY_CONTRACT, type TableState } from "../shared";
 import { GameRoom } from "./game-room";
 
 function createInput(roomId: string) {
@@ -97,70 +97,13 @@ describe("GameRoom", () => {
     socket.close(1000, "done");
   });
 
-  it("uses the shared alarm for a paced house action before expiry", async () => {
-    const stub = env.GAME_ROOM.getByName("bot-room");
-    const startedAt = Date.now();
-    await stub.createRoom({
-      roomId: "bot-room",
-      contract: PRACTICE_CONTRACT,
-      seatIds: ["human", "house"],
-      hostSessionHash: "aG9zdA",
-      inviteHash: null,
-      now: startedAt,
-    });
-    let requestedRank: Rank = "A";
-    await runInDurableObject(stub, async (_instance: GameRoom, objectState) => {
-      const row = objectState.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").one();
-      const state = JSON.parse(row.state_json) as TableState;
-      const cards = collectCards(state);
-      const humanCard = cards[0];
-      const houseCard = cards.find((card) => card.rank !== humanCard.rank);
-      const drawCard = cards.find((card) => card.rank !== humanCard.rank && card.rank !== houseCard?.rank);
-      if (!houseCard || !drawCard) throw new Error("Could not arrange bot test cards");
-      requestedRank = humanCard.rank;
-      const used = new Set([humanCard.id, houseCard.id, drawCard.id]);
-      state.seats = [
-        { seatId: "human", hand: [humanCard], books: [] },
-        { seatId: "house", hand: [houseCard], books: [] },
-      ];
-      state.zones = [{
-        id: "stock",
-        kind: "stock",
-        facing: "down",
-        cards: [...cards.filter((card) => !used.has(card.id)), drawCard].map((card) => ({ card, face: "down" })),
-      }];
-      state.activeSeatId = "human";
-      state.revision = 0;
-      state.processedActionIds = [];
-      objectState.storage.sql.exec("UPDATE snapshot SET state_json = ? WHERE id = 1", JSON.stringify(state));
-    });
-
-    const humanAction = await stub.performAction(
-      "aG9zdA",
-      { actionId: "human-request", expectedRevision: 0, action: { type: "request_rank", rank: requestedRank } },
-      startedAt,
-    );
-    expect(humanAction.ok && humanAction.value.activeSeatId).toBe("house");
-    await runInDurableObject(stub, async (_instance: GameRoom, state) => {
-      const alarm = await state.storage.getAlarm();
-      expect(alarm).toBe(startedAt + 1_000);
-      const row = state.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").one();
-      const snapshot = JSON.parse(row.state_json) as TableState;
-      snapshot.nextBotActionAt = Date.now() - 1;
-      state.storage.sql.exec("UPDATE snapshot SET state_json = ? WHERE id = 1", JSON.stringify(snapshot));
-      await state.storage.setAlarm(Date.now() + 1_000);
-    });
-    expect(await runDurableObjectAlarm(stub)).toBe(true);
-    const afterBot = await stub.getView("aG9zdA");
-    expect(afterBot.ok && afterBot.value.revision).toBe(2);
-  });
-
-  it("expires an inactive room through the same alarm", async () => {
+  it("schedules and expires an inactive room", async () => {
     const stub = env.GAME_ROOM.getByName("expiry-room");
     await stub.createRoom(createInput("expiry-room"));
     await runInDurableObject(stub, async (_instance: GameRoom, objectState) => {
       const row = objectState.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").one();
       const state = JSON.parse(row.state_json) as TableState;
+      expect(await objectState.storage.getAlarm()).toBe(state.expiresAt);
       state.expiresAt = Date.now() - 1;
       objectState.storage.sql.exec("UPDATE snapshot SET state_json = ? WHERE id = 1", JSON.stringify(state));
       await objectState.storage.setAlarm(Date.now() + 1_000);
@@ -172,15 +115,16 @@ describe("GameRoom", () => {
 });
 
 describe("room HTTP API", () => {
-  it("creates a practice room and returns a room-scoped secure cookie", async () => {
+  it("creates a prompt-defined room and returns an invite and room-scoped secure cookie", async () => {
     const response = await exports.default.fetch("http://example.com/api/rooms", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "practice" }),
+      body: JSON.stringify({ contract: DEFAULT_FREE_PLAY_CONTRACT }),
     });
     expect(response.status).toBe(201);
-    const body = await response.json<{ roomId: string; view: { self: { seatId: string } } }>();
-    expect(body.view.self.seatId).toBe("human");
+    const body = await response.json<{ roomId: string; inviteUrl: string; view: { self: { seatId: string } } }>();
+    expect(body.view.self.seatId).toBe("host");
+    expect(body.inviteUrl).toContain(`#invite=`);
     const cookie = response.headers.get("set-cookie");
     expect(cookie).toContain(`Path=/api/rooms/${body.roomId}`);
     expect(cookie).toContain("HttpOnly");
@@ -197,7 +141,7 @@ describe("room HTTP API", () => {
     const created = await exports.default.fetch("http://example.com/api/rooms", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "free_play", contract: DEFAULT_FREE_PLAY_CONTRACT }),
+      body: JSON.stringify({ contract: DEFAULT_FREE_PLAY_CONTRACT }),
     });
     const body = await created.json<{ roomId: string; inviteUrl: string }>();
     const token = new URL(body.inviteUrl).hash.slice("#invite=".length);
@@ -218,7 +162,7 @@ describe("room HTTP API", () => {
       exports.default.fetch("http://example.com/api/rooms", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "practice" }),
+        body: JSON.stringify({ contract: DEFAULT_FREE_PLAY_CONTRACT }),
       });
     const first = await create();
     const firstCookie = first.headers.get("set-cookie") ?? "";
@@ -247,11 +191,4 @@ function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> 
       { once: true },
     );
   });
-}
-
-function collectCards(state: TableState): Card[] {
-  return [
-    ...state.seats.flatMap((seat) => [...seat.hand, ...seat.books.flat()]),
-    ...state.zones.flatMap((zone) => zone.cards.map(({ card }) => card)),
-  ];
 }

@@ -1,6 +1,5 @@
 import {
   REACTIONS,
-  RANKS,
   validateContract,
   type ActionEnvelope,
   type GameContract,
@@ -54,11 +53,12 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export function parseCreateRoom(value: unknown): { mode: "practice" } | { mode: "free_play"; contract: GameContract } {
+export function parseCreateRoom(value: unknown): { contract: GameContract } {
   const object = requireObject(value);
-  if (object.mode === "practice") return { mode: "practice" };
-  if (object.mode !== "free_play") throw new RequestError("invalid_mode", "Mode must be practice or free_play");
-  return { mode: "free_play", contract: parseContract(object.contract) };
+  if (object.mode !== undefined && object.mode !== "free_play") {
+    throw new RequestError("invalid_mode", "Only prompt-defined tables are supported");
+  }
+  return { contract: parseContract(object.contract) };
 }
 
 export function parseActionEnvelope(value: unknown): ActionEnvelope {
@@ -94,9 +94,8 @@ function parseContract(value: unknown): GameContract {
     throw new RequestError("invalid_contract", "Contract zones and allowedActions must be arrays");
   }
   const contract: GameContract = {
-    kind: object.kind === "free_play" ? "free_play" : object.kind === "go_fish" ? "go_fish" : invalid("Contract kind is invalid"),
     name: requireString(object.name, "name"),
-    objective: requireString(object.objective, "objective"),
+    gamePrompt: requireString(object.gamePrompt, "gamePrompt"),
     startingHandSize: requireNumber(object.startingHandSize, "startingHandSize"),
     turnOrder:
       object.turnOrder === "alternating" || object.turnOrder === "manual"
@@ -114,10 +113,7 @@ function parseContract(value: unknown): GameContract {
       };
     }),
     allowedActions: object.allowedActions.map((action) => requireString(action, "allowedActions")) as GameContract["allowedActions"],
-    winCondition: requireString(object.winCondition, "winCondition"),
-    ...(object.note === undefined ? {} : { note: requireString(object.note, "note") }),
   };
-  if (contract.kind !== "free_play") throw new RequestError("invalid_contract", "Custom contracts must use free_play");
   return validateContract(contract);
 }
 
@@ -141,6 +137,8 @@ function parseAction(value: unknown): TableAction {
       return { type: "reveal", cardIds: requireStringArray(action.cardIds, "cardIds") };
     case "shuffle":
       return { type: "shuffle", zoneId: requireString(action.zoneId, "zoneId") };
+    case "announce":
+      return { type: "announce", message: requireString(action.message, "message") };
     case "react": {
       const reaction = requireString(action.reaction, "reaction") as Reaction;
       if (!(REACTIONS as readonly string[]).includes(reaction)) throw new RequestError("invalid_reaction", "Reaction is invalid");
@@ -148,18 +146,13 @@ function parseAction(value: unknown): TableAction {
     }
     case "end_turn":
       return { type: "end_turn" };
-    case "request_rank": {
-      const rank = requireString(action.rank, "rank");
-      if (!(RANKS as readonly string[]).includes(rank)) throw new RequestError("invalid_rank", "Rank is invalid");
-      return { type: "request_rank", rank: rank as (typeof RANKS)[number] };
-    }
     default:
       throw new RequestError("invalid_action", "Action type is invalid");
   }
 }
 
 function parseSeatId(value: unknown): SeatId {
-  if (value === "host" || value === "guest" || value === "human" || value === "house") return value;
+  if (value === "host" || value === "guest") return value;
   throw new RequestError("invalid_seat", "Seat ID is invalid");
 }
 
