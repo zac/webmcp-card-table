@@ -1,4 +1,4 @@
-import type { ActionEnvelope, GameContract, SeatId, TableView } from "../shared";
+import type { ActionEnvelope, GameContract, RoomReplay, SeatId, TableView } from "../shared";
 
 const SEAT_STORAGE_PREFIX = "card-table-seat:";
 
@@ -33,6 +33,11 @@ export async function redeemInvite(roomId: string, inviteToken: string, signal?:
 
 export function fetchTable(roomId: string, signal?: AbortSignal): Promise<TableView> {
   return requestJson(`/api/rooms/${roomId}/view`, { signal }, roomId);
+}
+
+export function fetchTableReplay(roomId: string, revision?: number, signal?: AbortSignal): Promise<RoomReplay> {
+  const query = revision === undefined ? "" : `?revision=${revision}`;
+  return requestJson(`/api/rooms/${roomId}/replay${query}`, { signal }, roomId);
 }
 
 export function submitTableAction(roomId: string, envelope: ActionEnvelope, signal?: AbortSignal): Promise<TableView> {

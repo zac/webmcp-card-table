@@ -17,6 +17,7 @@ import type {
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_EVENTS = 100;
 const MAX_ACTION_IDS = 500;
+type GameplayAction = Exclude<TableAction, { type: "finish_game" }>;
 
 export class GameError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400) {
@@ -116,17 +117,34 @@ export function applyAction(
     throw new GameError("unknown_seat", "The caller is not seated at this table", 403);
   }
 
-  const actionName = envelope.action.type as ActionName;
-  if (!current.contract.allowedActions.includes(actionName)) {
-    throw new GameError("action_disabled", `${actionName} is not enabled for this table`, 403);
-  }
-  if (current.contract.turnOrder === "alternating" && current.activeSeatId !== actorSeatId) {
-    throw new GameError("wrong_turn", "Wait for your turn before acting", 409);
-  }
-
   const next = structuredClone(current);
   const nextRevision = current.revision + 1;
-  const events = [applyGenericAction(next, actorSeatId, envelope.action, nextRevision, dependencies)];
+  let event: TableEvent;
+  if (envelope.action.type === "finish_game") {
+    if (actorSeatId !== current.seats[0].seatId) {
+      throw new GameError("host_only", "Only the host can end this game", 403);
+    }
+    next.status = "finished";
+    next.activeSeatId = null;
+    event = {
+      id: dependencies.eventId(),
+      revision: nextRevision,
+      actorSeatId,
+      at: dependencies.now,
+      type: "game_finished",
+      data: {},
+    };
+  } else {
+    const actionName = envelope.action.type as ActionName;
+    if (!current.contract.allowedActions.includes(actionName)) {
+      throw new GameError("action_disabled", `${actionName} is not enabled for this table`, 403);
+    }
+    if (current.contract.turnOrder === "alternating" && current.activeSeatId !== actorSeatId) {
+      throw new GameError("wrong_turn", "Wait for your turn before acting", 409);
+    }
+    event = applyGenericAction(next, actorSeatId, envelope.action, nextRevision, dependencies);
+  }
+  const events = [event];
   next.revision = nextRevision;
   next.lastActivityAt = dependencies.now;
   next.expiresAt = dependencies.now + ROOM_TTL_MS;
@@ -139,7 +157,7 @@ export function applyAction(
 function applyGenericAction(
   state: TableState,
   actorSeatId: SeatId,
-  action: TableAction,
+  action: GameplayAction,
   revision: number,
   dependencies: EngineDependencies,
 ): TableEvent {

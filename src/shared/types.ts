@@ -72,7 +72,8 @@ export type TableAction =
   | { type: "shuffle"; zoneId: string }
   | { type: "announce"; message: string }
   | { type: "react"; reaction: Reaction }
-  | { type: "end_turn" };
+  | { type: "end_turn" }
+  | { type: "finish_game" };
 
 export type TableEventType =
   | "room_created"
@@ -86,7 +87,8 @@ export type TableEventType =
   | "zone_shuffled"
   | "announcement"
   | "reaction"
-  | "turn_ended";
+  | "turn_ended"
+  | "game_finished";
 
 export interface TableEvent {
   id: string;
@@ -164,6 +166,12 @@ export interface TableView {
   opponent: { seatId: SeatId; cardCount: number; zones: OpponentZoneView[] };
   publicZones: PublicZoneView[];
   recentEvents: TableEvent[];
+}
+
+export interface RoomReplay {
+  currentRevision: number;
+  revisions: number[];
+  view: TableView;
 }
 
 export interface RandomSource {

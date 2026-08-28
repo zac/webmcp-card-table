@@ -467,6 +467,7 @@ function eventText(event: TableEvent, selfSeatId: SeatId): string {
     case "announcement": return `${actor}: “${String(event.data.message)}”`;
     case "reaction": return `${actor}: ${String(event.data.reaction).replaceAll("_", " ")}.`;
     case "turn_ended": return `${actor} passed the turn.`;
+    case "game_finished": return `${actor} ended the game.`;
   }
 }
 

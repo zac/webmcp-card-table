@@ -167,6 +167,8 @@ function parseAction(value: unknown): TableAction {
     }
     case "end_turn":
       return { type: "end_turn" };
+    case "finish_game":
+      return { type: "finish_game" };
     default:
       throw new RequestError("invalid_action", "Action type is invalid");
   }

@@ -27,6 +27,7 @@ describe("GameRoom", () => {
       expect(instance).toBeInstanceOf(GameRoom);
       expect(state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM snapshot").one().count).toBe(1);
       expect(state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM events").one().count).toBe(1);
+      expect(state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM revision_snapshots").one().count).toBe(1);
     });
   });
 
@@ -53,6 +54,61 @@ describe("GameRoom", () => {
     const duplicate = await stub.performAction("aG9zdA", "host", { ...action, expectedRevision: 1 }, Date.now());
     expect(duplicate.ok).toBe(false);
     if (!duplicate.ok) expect(duplicate.error.code).toBe("duplicate_action");
+  });
+
+  it("keeps a seat-projected replay after the host freezes the game", async () => {
+    const stub = env.GAME_ROOM.getByName("finished-room");
+    await stub.createRoom(createInput("finished-room"));
+    await stub.redeemInvite("aW52aXRl", "Z3Vlc3Q", Date.now());
+    const played = await stub.performAction(
+      "aG9zdA",
+      "host",
+      { actionId: "opening-reaction", expectedRevision: 0, action: { type: "react", reaction: "thinking" } },
+      Date.now(),
+    );
+    expect(played.ok && played.value.revision).toBe(1);
+
+    const guestAttempt = await stub.performAction(
+      "Z3Vlc3Q",
+      "guest",
+      { actionId: "guest-finish", expectedRevision: 1, action: { type: "finish_game" } },
+      Date.now(),
+    );
+    expect(guestAttempt.ok).toBe(false);
+    if (!guestAttempt.ok) expect(guestAttempt.error.code).toBe("host_only");
+
+    const finished = await stub.performAction(
+      "aG9zdA",
+      "host",
+      { actionId: "host-finish", expectedRevision: 1, action: { type: "finish_game" } },
+      Date.now(),
+    );
+    expect(finished.ok && finished.value).toMatchObject({ revision: 2, status: "finished", activeSeatId: null });
+
+    const hostOpening = await stub.getReplay("aG9zdA", "host", 0);
+    expect(hostOpening.ok && hostOpening.value).toMatchObject({ currentRevision: 2, revisions: [0, 1, 2], view: { revision: 0, status: "active", self: { seatId: "host" } } });
+    const guestOpening = await stub.getReplay("Z3Vlc3Q", "guest", 0);
+    expect(guestOpening.ok && guestOpening.value).toMatchObject({ view: { revision: 0, self: { seatId: "guest" } } });
+    if (hostOpening.ok && guestOpening.ok) {
+      expect(hostOpening.value.view.self.hand[0]?.id).not.toBe(guestOpening.value.view.self.hand[0]?.id);
+    }
+    const finalReplay = await stub.getReplay("aG9zdA", "host", null);
+    expect(finalReplay.ok && finalReplay.value.view).toMatchObject({ revision: 2, status: "finished" });
+
+    const afterFinish = await stub.performAction(
+      "aG9zdA",
+      "host",
+      { actionId: "too-late", expectedRevision: 2, action: { type: "react", reaction: "well_played" } },
+      Date.now(),
+    );
+    expect(afterFinish.ok).toBe(false);
+    if (!afterFinish.ok) expect(afterFinish.error.code).toBe("room_inactive");
+
+    await runInDurableObject(stub, async (_instance: GameRoom, state) => {
+      const row = state.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").one();
+      const persisted = JSON.parse(row.state_json) as TableState;
+      expect(await state.storage.getAlarm()).toBe(persisted.expiresAt);
+    });
   });
 
   it("resynchronizes stale sockets and streams accepted updates", async () => {
@@ -208,6 +264,27 @@ describe("room HTTP API", () => {
     });
     expect(ambiguous.status).toBe(409);
     expect(await ambiguous.json<{ error: string }>()).toMatchObject({ error: "seat_required" });
+  });
+
+  it("returns authenticated replay revisions and validates the selector", async () => {
+    const created = await exports.default.fetch("http://example.com/api/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contract: DEFAULT_FREE_PLAY_CONTRACT }),
+    });
+    const room = await created.json<{ roomId: string }>();
+    const cookie = cookiePair(created.headers.get("set-cookie"));
+    const headers = { cookie, "x-card-table-seat": "host" };
+    const replay = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/replay?revision=0`, { headers });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({ currentRevision: 0, revisions: [0], view: { revision: 0, self: { seatId: "host" } } });
+
+    const invalid = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/replay?revision=-1`, { headers });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: "invalid_revision" });
+    const missing = await exports.default.fetch(`http://example.com/api/rooms/${room.roomId}/replay?revision=7`, { headers });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: "replay_unavailable" });
   });
 });
 

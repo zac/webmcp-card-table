@@ -1,4 +1,4 @@
-import type { SeatId, TableView } from "../shared";
+import type { RoomReplay, SeatId, TableView } from "../shared";
 import { hashToken, randomToken } from "./crypto";
 import { GameRoom, type RpcResult } from "./game-room";
 import {
@@ -50,7 +50,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
     return createRoom(request, url, env);
   }
 
-  const match = /^\/api\/rooms\/([^/]+)\/(redeem|view|actions|socket)$/.exec(url.pathname);
+  const match = /^\/api\/rooms\/([^/]+)\/(redeem|view|replay|actions|socket)$/.exec(url.pathname);
   if (match) {
     const roomId = assertRoomId(match[1]);
     const operation = match[2];
@@ -59,6 +59,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
       return redeemInvite(request, roomId, env);
     }
     if (operation === "view" && request.method === "GET") return getView(request, roomId, env);
+    if (operation === "replay" && request.method === "GET") return getReplay(request, url, roomId, env);
     if (operation === "actions" && request.method === "POST") {
       assertSameOrigin(request, url);
       return performAction(request, roomId, env);
@@ -109,6 +110,20 @@ async function redeemInvite(request: Request, roomId: string, env: Env): Promise
 async function getView(request: Request, roomId: string, env: Env): Promise<Response> {
   const session = await sessionFromRequest(request, roomId);
   return Response.json(unwrap(await roomStub(env, roomId).getView(session.hash, session.seatId)));
+}
+
+async function getReplay(request: Request, url: URL, roomId: string, env: Env): Promise<Response> {
+  const session = await sessionFromRequest(request, roomId);
+  const value = url.searchParams.get("revision");
+  let revision: number | null = null;
+  if (value !== null) {
+    revision = Number(value);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(revision)) {
+      throw new RequestError("invalid_revision", "Revision must be a non-negative integer");
+    }
+  }
+  const replay: RoomReplay = unwrap(await roomStub(env, roomId).getReplay(session.hash, session.seatId, revision));
+  return Response.json(replay);
 }
 
 async function performAction(request: Request, roomId: string, env: Env): Promise<Response> {

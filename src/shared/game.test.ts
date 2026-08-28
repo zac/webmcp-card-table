@@ -122,6 +122,27 @@ describe("generic reducer", () => {
     expect(next.events.at(-1)?.type).toBe("turn_ended");
   });
 
+  it("lets only the host finish a game and freezes later actions", () => {
+    const initial = table();
+    expectGameError(
+      () => applyAction(initial, "guest", { actionId: "finish-guest", expectedRevision: 0, action: { type: "finish_game" } }, dependencies()),
+      "host_only",
+    );
+    const finished = applyAction(
+      initial,
+      "host",
+      { actionId: "finish-host", expectedRevision: 0, action: { type: "finish_game" } },
+      dependencies(),
+    );
+    expect(finished).toMatchObject({ status: "finished", activeSeatId: null, revision: 1 });
+    expect(finished.events.at(-1)).toMatchObject({ type: "game_finished", actorSeatId: "host" });
+    expect(countCards(finished)).toBe(52);
+    expectGameError(
+      () => applyAction(finished, "host", { actionId: "after-finish", expectedRevision: 1, action: { type: "react", reaction: "gg" } }, dependencies()),
+      "room_inactive",
+    );
+  });
+
   it("records a bounded public announcement without interpreting it", () => {
     const initial = table({ ...DEFAULT_FREE_PLAY_CONTRACT, turnOrder: "manual" });
     const next = applyAction(

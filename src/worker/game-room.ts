@@ -6,6 +6,7 @@ import {
   projectTable,
   type ActionEnvelope,
   type GameContract,
+  type RoomReplay,
   type SeatId,
   type TableEvent,
   type TableState,
@@ -29,6 +30,8 @@ interface RpcError {
   message: string;
   status: number;
 }
+
+const MAX_REPLAY_REVISIONS = 250;
 
 export type RpcResult<T> = { ok: true; value: T } | { ok: false; error: RpcError };
 
@@ -54,7 +57,20 @@ export class GameRoom extends DurableObject<Env> {
         token_hash TEXT NOT NULL,
         redeemed_at INTEGER
       );
+      CREATE TABLE IF NOT EXISTS revision_snapshots (
+        revision INTEGER PRIMARY KEY,
+        state_json TEXT NOT NULL
+      );
     `);
+    const current = this.ctx.storage.sql.exec<{ state_json: string }>("SELECT state_json FROM snapshot WHERE id = 1").toArray()[0];
+    if (current) {
+      const state = normalizeState(JSON.parse(current.state_json) as TableState | LegacyTableState);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO revision_snapshots (revision, state_json) VALUES (?, ?)",
+        state.revision,
+        JSON.stringify(state),
+      );
+    }
   }
 
   async createRoom(input: CreateRoomInput): Promise<RpcResult<TableView>> {
@@ -106,6 +122,29 @@ export class GameRoom extends DurableObject<Env> {
       const state = this.requireState();
       const seatId = this.authenticate(sessionHash, expectedSeatId);
       return { ok: true, value: projectTable(state, seatId) };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async getReplay(sessionHash: string, expectedSeatId: SeatId | null, revision: number | null): Promise<RpcResult<RoomReplay>> {
+    try {
+      const current = this.requireState();
+      const seatId = this.authenticate(sessionHash, expectedSeatId);
+      const revisions = this.ctx.storage.sql.exec<{ revision: number }>(
+        "SELECT revision FROM revision_snapshots ORDER BY revision",
+      ).toArray().map((row) => row.revision);
+      const targetRevision = revision ?? current.revision;
+      const row = this.ctx.storage.sql.exec<{ state_json: string }>(
+        "SELECT state_json FROM revision_snapshots WHERE revision = ?",
+        targetRevision,
+      ).toArray()[0];
+      if (!row) throw new GameError("replay_unavailable", "That table revision is no longer available", 404);
+      const state = normalizeState(JSON.parse(row.state_json) as TableState | LegacyTableState);
+      return {
+        ok: true,
+        value: { currentRevision: current.revision, revisions, view: projectTable(state, seatId) },
+      };
     } catch (error) {
       return failure(error);
     }
@@ -220,6 +259,19 @@ export class GameRoom extends DurableObject<Env> {
       "INSERT INTO snapshot (id, state_json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json",
       JSON.stringify(state),
     );
+    this.ctx.storage.sql.exec(
+      "INSERT INTO revision_snapshots (revision, state_json) VALUES (?, ?) ON CONFLICT(revision) DO UPDATE SET state_json = excluded.state_json",
+      state.revision,
+      JSON.stringify(state),
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM revision_snapshots
+       WHERE revision <> 0
+         AND revision NOT IN (
+           SELECT revision FROM revision_snapshots ORDER BY revision DESC LIMIT ?
+         )`,
+      MAX_REPLAY_REVISIONS,
+    );
     for (const event of events) {
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO events (event_id, revision, event_json) VALUES (?, ?, ?)",
@@ -253,7 +305,7 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async scheduleNextAlarm(state: TableState): Promise<void> {
-    if (state.status !== "active") {
+    if (state.status === "expired") {
       await this.ctx.storage.deleteAlarm();
       return;
     }
