@@ -454,6 +454,21 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .station-intro h1 { max-width: 680px; }
 }
 
+@media (min-width: 1041px) and (max-height: 820px) {
+  .dealer-station { margin-top: 24px; }
+  .station-intro { top: 94px; padding-top: 10px; }
+  .station-intro h1 { font-size: clamp(3.45rem, 5vw, 4.7rem); }
+  .agent-demo { margin-top: 24px; }
+  .table-proof { margin-top: 20px; }
+  .rules-slip { padding: 25px 30px; }
+  .slip-heading h2 { margin-bottom: 14px; }
+  .preset-rack { margin-bottom: 14px; }
+  .preset-card { min-height: 72px; padding: 9px 10px; }
+  .draft-editor { gap: 10px; }
+  .draft-editor textarea { min-height: 104px; }
+  .start-table-row { margin-top: 12px; }
+}
+
 @media (min-width: 641px) and (max-width: 1040px) {
   .game-layout { grid-template-columns: 1fr; }
   .control-rail { min-height: 0; display: grid; grid-template-columns: minmax(220px, .82fr) minmax(0, 1.18fr); align-items: start; gap: 0 22px; }
