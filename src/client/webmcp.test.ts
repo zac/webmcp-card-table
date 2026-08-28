@@ -15,7 +15,7 @@ function view(): TableView {
     roomId: "room-1", revision: 3, contract, activeSeatId: "host", status: "active", winnerSeatId: null,
     self: { seatId: "host", hand: [{ id: "opaque-1", rank: "A", suit: "spades" }], zones: [] },
     opponent: { seatId: "guest", presence: "online", cardCount: 7, zones: [] },
-    publicZones: [{ zoneId: "stock", kind: "stock", ordered: true, cardCount: 37, cards: [{ id: "opaque-2", face: "down" }] }], recentEvents: [],
+    publicZones: [{ zoneId: "stock", ownerSeatId: null, kind: "stock", ordered: true, cardCount: 37, cards: [{ id: "opaque-2", face: "down" }] }], recentEvents: [],
   };
 }
 
@@ -89,12 +89,15 @@ describe("WebMCP table tools", () => {
     current.contract = { ...current.contract, allowedActions: ["play_next", "collect"] };
     current.self.zones = [{ zoneId: "deck", kind: "pile", visibility: "hidden", ordered: true, cardCount: 26, cards: [] }];
     current.opponent.zones = [{ zoneId: "deck", kind: "pile", ordered: true, cardCount: 26 }];
-    current.publicZones.push({ zoneId: "battle", kind: "pile", ordered: true, cardCount: 0, cards: [] });
+    current.publicZones.push({ zoneId: "battle", ownerSeatId: "host", kind: "pile", ordered: true, cardCount: 0, cards: [] });
+    current.publicZones.push({ zoneId: "battle", ownerSeatId: "guest", kind: "pile", ordered: true, cardCount: 1, cards: [{ id: "guest-card", face: "up", rank: "K", suit: "clubs" }] });
     const executeAction = vi.fn(async () => ({ ...current, revision: 4 }));
     registerTableTools(context, { getView: () => current, executeAction, requestFinish: vi.fn() }, new AbortController().signal);
     expect([...tools.keys()].sort()).toEqual(["collect_pile", "finish_table", "inspect_table", "play_next_card"]);
     await tools.get("play_next_card")!.execute({ sourceZoneId: "deck", targetZoneId: "battle", face: "up" });
     expect(executeAction).toHaveBeenCalledWith({ type: "play_next", sourceZoneId: "deck", targetZoneId: "battle", face: "up" }, expect.any(AbortSignal));
+    await tools.get("collect_pile")!.execute({ sourceZoneId: "battle", sourceSeatId: "guest", targetZoneId: "deck", placement: "bottom" });
+    expect(executeAction).toHaveBeenCalledWith({ type: "collect", sourceZoneId: "battle", sourceSeatId: "guest", targetZoneId: "deck", placement: "bottom" }, expect.any(AbortSignal));
   });
 
   it("keeps finish host-only and exposes only inspection after a game ends", () => {

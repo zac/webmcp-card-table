@@ -218,7 +218,7 @@ function applyGenericAction(
     }
     case "move": {
       const cards = takeOwnedCards(actor, action.cardIds);
-      const zone = getSharedZone(state, action.zoneId);
+      const zone = getPublicDestinationZone(state, action.zoneId, actorSeatId);
       zone.cards.push(...cards.map((card) => ({ card, face: action.face })));
       return {
         ...base,
@@ -231,16 +231,16 @@ function applyGenericAction(
       if (!source.ordered) throw new GameError("unordered_zone", `${source.id} does not have a next card`);
       const nextCard = source.cards.pop();
       if (!nextCard) throw new GameError("empty_zone", `${source.id} has no cards to play`);
-      const target = getSharedZone(state, action.targetZoneId);
+      const target = getPublicDestinationZone(state, action.targetZoneId, actorSeatId);
       target.cards.push({ card: nextCard.card, face: action.face });
       return {
         ...base,
         type: "next_card_played",
-        data: { sourceZoneId: source.id, targetZoneId: target.id, face: action.face, cardId: nextCard.card.id },
+        data: { sourceZoneId: source.id, targetZoneId: target.id, targetSeatId: target.ownerSeatId, face: action.face, cardId: nextCard.card.id },
       };
     }
     case "collect": {
-      const source = getSharedZone(state, action.sourceZoneId);
+      const source = getCollectiblePublicZone(state, action.sourceZoneId, action.sourceSeatId, actorSeatId);
       if (source.cards.length === 0) throw new GameError("empty_zone", `${source.id} has no cards to collect`);
       const target = getOwnedZone(state, action.targetZoneId, actorSeatId);
       if (!target.ordered) throw new GameError("unordered_zone", `${target.id} cannot receive an ordered pile`);
@@ -250,7 +250,7 @@ function applyGenericAction(
       return {
         ...base,
         type: "pile_collected",
-        data: { sourceZoneId: source.id, targetZoneId: target.id, placement: action.placement, count: collected.length },
+        data: { sourceZoneId: source.id, sourceSeatId: source.ownerSeatId, targetZoneId: target.id, placement: action.placement, count: collected.length },
       };
     }
     case "give": {
@@ -341,6 +341,21 @@ export function getOwnedZone(state: TableState, zoneId: string, seatId: SeatId):
 function getAccessibleZone(state: TableState, zoneId: string, seatId: SeatId): ZoneState {
   const zone = state.zones.find((candidate) => candidate.id === zoneId && (candidate.ownerSeatId === null || candidate.ownerSeatId === seatId));
   if (!zone) throw new GameError("unknown_zone", `Zone ${zoneId} does not exist for this seat`, 404);
+  return zone;
+}
+
+function getPublicDestinationZone(state: TableState, zoneId: string, actorSeatId: SeatId): ZoneState {
+  const zone = state.zones.find((candidate) => candidate.id === zoneId && (candidate.ownerSeatId === null || candidate.ownerSeatId === actorSeatId));
+  if (!zone || zone.visibility !== "public") throw new GameError("unknown_zone", `Public zone ${zoneId} does not exist for this seat`, 404);
+  return zone;
+}
+
+function getCollectiblePublicZone(state: TableState, zoneId: string, sourceSeatId: SeatId | undefined, actorSeatId: SeatId): ZoneState {
+  const shared = state.zones.find((candidate) => candidate.id === zoneId && candidate.ownerSeatId === null);
+  if (shared) return shared;
+  const ownerSeatId = sourceSeatId ?? actorSeatId;
+  const zone = state.zones.find((candidate) => candidate.id === zoneId && candidate.ownerSeatId === ownerSeatId);
+  if (!zone || zone.visibility !== "public") throw new GameError("unknown_zone", `Public zone ${zoneId} does not exist for ${ownerSeatId}`, 404);
   return zone;
 }
 

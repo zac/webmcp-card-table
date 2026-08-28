@@ -7,6 +7,7 @@ import {
   type GameContract,
   type GamePresetId,
   type Reaction,
+  type SeatId,
   type TableAction,
   type TableEvent,
   type TableView,
@@ -163,9 +164,9 @@ export function registerTableTools(context: WebMcpContext, handlers: TableToolHa
   if (allowed.has("play_next")) registerAction(context, signal, handlers, "play_next_card", "Play the next card", "Move the next card from one of your ordered personal piles to a public pile without choosing or inspecting it first.", {
     type: "object", additionalProperties: false, properties: { sourceZoneId: zoneSchema, targetZoneId: zoneSchema, face: { type: "string", enum: ["up", "down"] } }, required: ["sourceZoneId", "targetZoneId", "face"],
   }, (input) => ({ type: "play_next", sourceZoneId: String(input.sourceZoneId), targetZoneId: String(input.targetZoneId), face: input.face as "up" | "down" }));
-  if (allowed.has("collect")) registerAction(context, signal, handlers, "collect_pile", "Collect a public pile", "Move every card from a public pile to the top or bottom of one of your ordered personal piles.", {
-    type: "object", additionalProperties: false, properties: { sourceZoneId: zoneSchema, targetZoneId: zoneSchema, placement: { type: "string", enum: ["top", "bottom"] } }, required: ["sourceZoneId", "targetZoneId", "placement"],
-  }, (input) => ({ type: "collect", sourceZoneId: String(input.sourceZoneId), targetZoneId: String(input.targetZoneId), placement: input.placement as "top" | "bottom" }));
+  if (allowed.has("collect")) registerAction(context, signal, handlers, "collect_pile", "Collect a public pile", "Move every card from a shared or player-owned public pile to the top or bottom of one of your ordered personal piles.", {
+    type: "object", additionalProperties: false, properties: { sourceZoneId: zoneSchema, sourceSeatId: { type: "string", enum: ["host", "guest"] }, targetZoneId: zoneSchema, placement: { type: "string", enum: ["top", "bottom"] } }, required: ["sourceZoneId", "targetZoneId", "placement"],
+  }, (input) => ({ type: "collect", sourceZoneId: String(input.sourceZoneId), ...(input.sourceSeatId ? { sourceSeatId: input.sourceSeatId as SeatId } : {}), targetZoneId: String(input.targetZoneId), placement: input.placement as "top" | "bottom" }));
   if (allowed.has("give")) registerAction(context, signal, handlers, "give_cards", "Give cards", "Give cards from your hand to the other seat.", {
     type: "object", additionalProperties: false, properties: { cardIds: cardIdsSchema }, required: ["cardIds"],
   }, (input) => ({ type: "give", cardIds: input.cardIds as string[], targetSeatId: handlers.getView().opponent.seatId }));
@@ -244,7 +245,7 @@ function viewSummary(view: TableView) {
     yourHand: view.self.hand.map((card) => ({ id: card.id, rank: card.rank, suit: card.suit })),
     yourZones: view.self.zones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, visibility: zone.visibility, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
     opponent: { seatId: view.opponent.seatId, presence: view.opponent.presence, handCardCount: view.opponent.cardCount, zones: view.opponent.zones },
-    publicZones: view.publicZones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
+    publicZones: view.publicZones.map((zone) => ({ zoneId: zone.zoneId, ownerSeatId: zone.ownerSeatId, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
     rules: contractSummary(view.contract),
     recentEvents: view.recentEvents.slice(-5).map(eventSummary),
   };

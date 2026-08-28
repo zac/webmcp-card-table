@@ -24,7 +24,7 @@ export function projectTable(state: TableState, seatId: SeatId, presence: Projec
       seatId: self.seatId,
       hand: self.hand.map(cardView),
       zones: state.zones
-        .filter((zone) => zone.ownerSeatId === self.seatId)
+        .filter((zone) => zone.ownerSeatId === self.seatId && zone.visibility !== "public")
         .map((zone) => ({
           zoneId: zone.id,
           kind: zone.kind,
@@ -41,11 +41,12 @@ export function projectTable(state: TableState, seatId: SeatId, presence: Projec
         : presence.onlineSeatIds?.includes(opponent.seatId) ? "online" : "offline",
       cardCount: opponent.hand.length,
       zones: state.zones
-        .filter((zone) => zone.ownerSeatId === opponent.seatId)
+        .filter((zone) => zone.ownerSeatId === opponent.seatId && zone.visibility !== "public")
         .map((zone) => ({ zoneId: zone.id, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cards.length })),
     },
-    publicZones: state.zones.filter((zone) => zone.ownerSeatId === null).map((zone) => ({
+    publicZones: state.zones.filter((zone) => zone.visibility === "public").map((zone) => ({
       zoneId: zone.id,
+      ownerSeatId: zone.ownerSeatId,
       kind: zone.kind,
       ordered: zone.ordered,
       cardCount: zone.cards.length,

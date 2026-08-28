@@ -22,7 +22,7 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 
 1. Open a hand-based table. Click stock and confirm only stock-appropriate actions appear.
 2. Select one card, click a non-stock shared pile, and confirm the menu offers face-up and face-down play for the selected card.
-3. Open War. Click your hidden deck, play its next card face up to battle, then click battle and collect it to the bottom of your deck.
+3. Open War. Confirm each player has a card slot and a war pile. Click your hidden deck, play its next card face up to your card slot, then collect both players' card slots to the bottom of your deck.
 4. Confirm no card-manipulation form appears in the side panel. It should contain only turn and brief information, messages, reactions, errors, and table history.
 
 ## Invited seat
@@ -36,7 +36,7 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 
 ## War and shared browser storage
 
-1. Open War as the host. Verify your 26-card deck exposes only a count, `play_next_card` and `collect_pile` are registered, and `end_turn` is absent.
+1. Open War as the host. Verify your 26-card deck exposes only a count, both seats have a public card slot and war pile, `play_next_card` and `collect_pile` are registered, and `end_turn` is absent.
 2. Copy the guest prompt into a second Codex thread that uses the same in-app browser storage.
 3. Play one face-up card from each deck. Confirm both threads retain their own seat and neither can inspect upcoming cards.
 4. Let the higher card collect the battle pile to the bottom of its deck. Confirm the winner has 27 cards, the other seat has 25, and battle is empty.

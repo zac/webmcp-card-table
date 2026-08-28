@@ -43,13 +43,20 @@ describe("GameRoom", () => {
     if (!repeated.ok) expect(repeated.error.code).toBe("invite_used");
   });
 
-  it("removes the retired pass action from persisted shipped War contracts", async () => {
+  it("migrates the shipped War contract to player card slots and war piles", async () => {
     const stub = env.GAME_ROOM.getByName("legacy-war-room");
     const currentWar = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
-    const legacyWar = { ...currentWar, allowedActions: [...currentWar.allowedActions, "end_turn" as const] };
+    const legacyWar = {
+      ...currentWar,
+      gamePrompt: "Play two-player War. Each player uses play_next_card to move the top card of their hidden deck face-up to battle. Higher rank wins; aces are high. The winner uses collect_pile to place every battle card on the bottom of their deck. On a tie, each player plays three cards face-down and then one face-up. Repeat until the tie breaks, then collect the whole battle pile. A player who cannot play the required next card loses.",
+      zones: currentWar.zones.filter((zone) => zone.id !== "war").map((zone) => zone.id === "battle" ? { ...zone, scope: "shared" as const } : zone),
+      allowedActions: [...currentWar.allowedActions, "end_turn" as const],
+    };
     await stub.createRoom(createInput("legacy-war-room", legacyWar));
     const reloaded = await stub.getView("aG9zdA", "host");
     expect(reloaded.ok && reloaded.value.contract.allowedActions).not.toContain("end_turn");
+    expect(reloaded.ok && reloaded.value.publicZones.filter((zone) => zone.zoneId === "battle").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
+    expect(reloaded.ok && reloaded.value.publicZones.filter((zone) => zone.zoneId === "war").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
   });
 
   it("persists accepted actions and rejects duplicate IDs", async () => {

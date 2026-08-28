@@ -14,7 +14,7 @@ The product has one shape:
 
 Presets are not hard-coded game modes. They only prefill a normal table contract. Card Table enforces ownership, privacy, revisions, zones, and optional alternating turns; the two players referee the game described in their brief.
 
-Direct controls stay on the felt. Clicking stock offers draw, deal, and shuffle when the contract allows them. Selecting hand cards and clicking a shared pile offers valid play actions. Ordered personal piles expose next-card play, collection, and shuffle in place. The side panel is reserved for turn state, the game brief, announcements, reactions, and history.
+Direct controls stay on the felt. Clicking stock offers draw, deal, and shuffle when the contract allows them. Selecting hand cards and clicking a public pile offers valid play actions. Ordered personal piles expose next-card play, collection, and shuffle in place. Public zones can belong to the table or to one seat, which gives War a face-up card slot and face-down tie pile for each player. The side panel is reserved for turn state, the game brief, announcements, reactions, and history.
 
 ## Why WebMCP matters here
 
@@ -43,7 +43,7 @@ At a table, tools are registered only when the contract allows the matching acti
 - `end_turn`
 - `finish_table` (host only; waits for in-page confirmation)
 
-`play_next_card` moves the next card from an ordered personal pile without revealing it first. `collect_pile` moves a shared pile to the top or bottom of an ordered personal pile. Together they let the ordinary War preset use face-down decks without adding a War-specific game engine. War intentionally does not register `end_turn`: either seat can act, and the visible battle pile communicates the phase.
+`play_next_card` moves the next card from an ordered personal pile without revealing it first. `collect_pile` moves a shared or player-owned public pile to the top or bottom of an ordered personal pile. Together they let the ordinary War preset use face-down decks, separate face-up battle slots, and face-down tie piles without adding a War-specific game engine. War intentionally does not register `end_turn`: either seat can act, and the visible slots communicate the phase.
 
 `announce` is a bounded 160-character public game channel. It lets players make requests and declarations such as "Do you have any queens?" or "Eights are hearts" without adding a general-purpose chat product.
 
@@ -53,7 +53,7 @@ After the host ends a game, the registry contracts to `inspect_table`. Both seat
 
 ## Product and security behavior
 
-A `GameContract` contains a name, a game prompt of at most 2,000 characters, a 0–26 card opening deal, its destination, manual or alternating turns, zones, and an allow-list of operations. Exactly one shared stock is required. Zones can be shared or instantiated once per seat. Seat zones can be owner-visible or hidden from everyone, and ordered zones support next-card play and top or bottom collection.
+A `GameContract` contains a name, a game prompt of at most 2,000 characters, a 0–26 card opening deal, its destination, manual or alternating turns, zones, and an allow-list of operations. Exactly one shared stock is required. Zones can be shared or instantiated once per seat. Seat zones can be public, owner-visible, or hidden from everyone, and ordered zones support next-card play and top or bottom collection.
 
 All mutations carry an opaque `actionId` and `expectedRevision`. The pure reducer rejects duplicates, stale revisions, disabled actions, wrong turns, unknown zones, and card IDs not owned by the acting seat.
 

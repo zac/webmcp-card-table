@@ -80,9 +80,6 @@ function validateZone(zone: ZoneConfig): void {
   if (zone.scope === "shared" && zone.visibility !== "public") {
     throw new ContractError("invalid_zone_visibility", "Shared zones must use public visibility");
   }
-  if (zone.scope === "seat" && zone.visibility === "public") {
-    throw new ContractError("invalid_zone_visibility", "Seat-owned zones must use owner or hidden visibility");
-  }
 }
 
 export const ALL_ACTIONS: ActionName[] = ["deal", "draw", "move", "play_next", "collect", "give", "reveal", "shuffle", "announce", "react", "end_turn"];
@@ -138,13 +135,14 @@ export const GAME_PRESETS: GamePreset[] = [
     description: "A full-deck showdown with face-up battles.",
     contract: {
       name: "War",
-      gamePrompt: "Play two-player War. Each player uses play_next_card to move the top card of their hidden deck face-up to battle. Higher rank wins; aces are high. The winner uses collect_pile to place every battle card on the bottom of their deck. On a tie, each player plays three cards face-down and then one face-up. Repeat until the tie breaks, then collect the whole battle pile. A player who cannot play the required next card loses.",
+      gamePrompt: "Play two-player War. Each player uses play_next_card to move the top card of their hidden deck face-up to their own battle slot. Higher rank wins; aces are high. The winner collects both battle slots to the bottom of their deck. On a tie, each player plays three cards face-down to their own war pile, then one face-up to their battle slot. Repeat until the tie breaks, then collect both battle slots and both war piles. A player who cannot play the required next card loses.",
       startingHandSize: 26,
       startingZoneId: "deck",
       turnOrder: "manual",
       zones: [
         { id: "stock", kind: "stock", facing: "down", scope: "shared", visibility: "public", ordered: true },
-        { id: "battle", kind: "pile", facing: "up", scope: "shared", visibility: "public", ordered: true },
+        { id: "battle", kind: "pile", facing: "up", scope: "seat", visibility: "public", ordered: true },
+        { id: "war", kind: "pile", facing: "down", scope: "seat", visibility: "public", ordered: true },
         { id: "deck", kind: "pile", facing: "down", scope: "seat", visibility: "hidden", ordered: true },
       ],
       allowedActions: ["play_next", "collect", "shuffle", "announce", "react"],

@@ -149,6 +149,7 @@ function parseAction(value: unknown): TableAction {
       return {
         type: "collect",
         sourceZoneId: requireString(action.sourceZoneId, "sourceZoneId"),
+        ...(action.sourceSeatId === undefined ? {} : { sourceSeatId: parseSeatId(action.sourceSeatId) }),
         targetZoneId: requireString(action.targetZoneId, "targetZoneId"),
         placement: action.placement === "top" || action.placement === "bottom" ? action.placement : invalid("placement must be top or bottom"),
       };

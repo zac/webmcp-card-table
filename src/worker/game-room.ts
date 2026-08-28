@@ -35,6 +35,7 @@ interface RpcError {
 
 const MAX_REPLAY_REVISIONS = 250;
 const WAR_PRESET = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
+const LEGACY_WAR_PROMPT = "Play two-player War. Each player uses play_next_card to move the top card of their hidden deck face-up to battle. Higher rank wins; aces are high. The winner uses collect_pile to place every battle card on the bottom of their deck. On a tie, each player plays three cards face-down and then one face-up. Repeat until the tie breaks, then collect the whole battle pile. A player who cannot play the required next card loses.";
 
 export type RpcResult<T> = { ok: true; value: T } | { ok: false; error: RpcError };
 
@@ -388,16 +389,42 @@ function normalizeState(state: TableState | LegacyTableState): TableState {
         ownerSeatId: null,
       })),
     };
-  if (normalized.contract.gamePrompt !== WAR_PRESET.gamePrompt || !normalized.contract.allowedActions.includes("end_turn")) {
-    return normalized;
+  if (normalized.contract.gamePrompt === LEGACY_WAR_PROMPT && normalized.contract.zones.some((zone) => zone.id === "battle" && zone.scope === "shared")) {
+    return migrateLegacyWarTable(normalized);
   }
-  return {
-    ...normalized,
-    contract: {
-      ...normalized.contract,
-      allowedActions: normalized.contract.allowedActions.filter((action) => action !== "end_turn"),
-    },
-  };
+  if (normalized.contract.gamePrompt === WAR_PRESET.gamePrompt && normalized.contract.allowedActions.includes("end_turn")) {
+    return {
+      ...normalized,
+      contract: { ...normalized.contract, allowedActions: normalized.contract.allowedActions.filter((action) => action !== "end_turn") },
+    };
+  }
+  return normalized;
+}
+
+function migrateLegacyWarTable(state: TableState): TableState {
+  const oldBattle = state.zones.find((zone) => zone.id === "battle" && zone.ownerSeatId === null);
+  const zones = state.zones.filter((zone) => !(zone.id === "battle" && zone.ownerSeatId === null));
+  const battleConfig = WAR_PRESET.zones.find((zone) => zone.id === "battle")!;
+  const warConfig = WAR_PRESET.zones.find((zone) => zone.id === "war")!;
+  for (const seat of state.seats) {
+    zones.push({ ...battleConfig, ownerSeatId: seat.seatId, cards: [] });
+    zones.push({ ...warConfig, ownerSeatId: seat.seatId, cards: [] });
+  }
+
+  const actorsByCardId = new Map<string, SeatId>();
+  for (const event of state.events) {
+    if (event.type === "next_card_played" && typeof event.data.cardId === "string" && event.actorSeatId) {
+      actorsByCardId.set(event.data.cardId, event.actorSeatId);
+    }
+  }
+  oldBattle?.cards.forEach((zoneCard, index) => {
+    const ownerSeatId = actorsByCardId.get(zoneCard.card.id) ?? state.seats[index % state.seats.length].seatId;
+    const targetZoneId = zoneCard.face === "down" ? "war" : "battle";
+    const target = zones.find((zone) => zone.id === targetZoneId && zone.ownerSeatId === ownerSeatId);
+    target?.cards.push(zoneCard);
+  });
+
+  return { ...state, contract: structuredClone(WAR_PRESET), zones };
 }
 
 interface SocketAttachment {

@@ -67,7 +67,7 @@ export type TableAction =
   | { type: "draw"; zoneId: string; count: number }
   | { type: "move"; cardIds: string[]; zoneId: string; face: "up" | "down" }
   | { type: "play_next"; sourceZoneId: string; targetZoneId: string; face: "up" | "down" }
-  | { type: "collect"; sourceZoneId: string; targetZoneId: string; placement: "top" | "bottom" }
+  | { type: "collect"; sourceZoneId: string; sourceSeatId?: SeatId; targetZoneId: string; placement: "top" | "bottom" }
   | { type: "give"; cardIds: string[]; targetSeatId: SeatId }
   | { type: "reveal"; cardIds: string[] }
   | { type: "shuffle"; zoneId: string }
@@ -135,6 +135,7 @@ export interface CardView {
 
 export interface PublicZoneView {
   zoneId: string;
+  ownerSeatId: SeatId | null;
   kind: ZoneConfig["kind"];
   ordered: boolean;
   cardCount: number;

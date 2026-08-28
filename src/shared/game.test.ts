@@ -207,11 +207,13 @@ describe("generic reducer", () => {
     expect(after).toEqual(before);
   });
 
-  it("plays the next hidden card and collects a public pile into an ordered personal zone", () => {
+  it("plays into public seat slots and collects either player's War piles", () => {
     const war = GAME_PRESETS.find((preset) => preset.id === "war")!.contract;
     const initial = table(war);
     expect(initial.seats.every((seat) => seat.hand.length === 0)).toBe(true);
     expect(initial.zones.filter((zone) => zone.id === "deck").map((zone) => zone.cards.length)).toEqual([26, 26]);
+    expect(initial.zones.filter((zone) => zone.id === "battle").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
+    expect(initial.zones.filter((zone) => zone.id === "war").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
 
     const played = applyAction(
       initial,
@@ -220,16 +222,25 @@ describe("generic reducer", () => {
       dependencies(),
     );
     expect(played.zones.find((zone) => zone.id === "deck" && zone.ownerSeatId === "host")?.cards).toHaveLength(25);
-    expect(played.zones.find((zone) => zone.id === "battle")?.cards).toHaveLength(1);
+    expect(played.zones.find((zone) => zone.id === "battle" && zone.ownerSeatId === "host")?.cards).toHaveLength(1);
+
+    const guestPlayed = applyAction(
+      played,
+      "guest",
+      { actionId: "war-guest-play", expectedRevision: 1, action: { type: "play_next", sourceZoneId: "deck", targetZoneId: "battle", face: "up" } },
+      dependencies(2_500),
+    );
+    expect(guestPlayed.zones.find((zone) => zone.id === "battle" && zone.ownerSeatId === "guest")?.cards).toHaveLength(1);
 
     const collected = applyAction(
-      played,
+      guestPlayed,
       "host",
-      { actionId: "war-collect", expectedRevision: 1, action: { type: "collect", sourceZoneId: "battle", targetZoneId: "deck", placement: "bottom" } },
+      { actionId: "war-collect", expectedRevision: 2, action: { type: "collect", sourceZoneId: "battle", sourceSeatId: "guest", targetZoneId: "deck", placement: "bottom" } },
       dependencies(3_000),
     );
     expect(collected.zones.find((zone) => zone.id === "deck" && zone.ownerSeatId === "host")?.cards).toHaveLength(26);
-    expect(collected.zones.find((zone) => zone.id === "battle")?.cards).toHaveLength(0);
+    expect(collected.zones.find((zone) => zone.id === "battle" && zone.ownerSeatId === "guest")?.cards).toHaveLength(0);
+    expect(collected.zones.find((zone) => zone.id === "battle" && zone.ownerSeatId === "host")?.cards).toHaveLength(1);
     expect(countCards(collected)).toBe(52);
   });
 });
@@ -261,6 +272,8 @@ describe("seat projection", () => {
     expect(hostView.self.hand).toEqual([]);
     expect(hostView.self.zones).toEqual([{ zoneId: "deck", kind: "pile", visibility: "hidden", ordered: true, cardCount: 26, cards: [] }]);
     expect(hostView.opponent.zones).toEqual([{ zoneId: "deck", kind: "pile", ordered: true, cardCount: 26 }]);
+    expect(hostView.publicZones.filter((zone) => zone.zoneId === "battle").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
+    expect(hostView.publicZones.filter((zone) => zone.zoneId === "war").map((zone) => zone.ownerSeatId)).toEqual(["host", "guest"]);
     const serialized = JSON.stringify(hostView);
     for (const zone of initial.zones.filter((candidate) => candidate.id === "deck")) {
       for (const { card } of zone.cards) expect(serialized).not.toContain(JSON.stringify(card.id));

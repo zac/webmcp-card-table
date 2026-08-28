@@ -140,7 +140,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   height: 330px;
   margin: 0 auto 54px;
   border: 1px solid rgb(183 150 92 / 45%);
-  border-radius: 48% 48% 34px 34px / 24% 24% 34px 34px;
+  border-radius: 44px;
   background: radial-gradient(ellipse at center, #235a4b, var(--felt));
   box-shadow: inset 0 0 70px rgb(0 0 0 / 28%), 0 35px 80px rgb(0 0 0 / 35%);
 }
@@ -237,7 +237,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .invite-claimed { border: 1px solid rgb(109 196 158 / 28%); border-radius: 999px; padding: 7px 10px; color: #9ed8be; background: rgb(109 196 158 / 8%); font: .64rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 
 .game-layout { width: min(1380px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding-bottom: 28px; }
-.game-surface { min-height: 700px; position: relative; overflow: hidden; border: 1px solid rgb(183 150 92 / 48%); border-radius: 140px 140px 34px 34px / 80px 80px 34px 34px; background: radial-gradient(ellipse at 50% 45%, #286955, #17483c 58%, #10352d); box-shadow: inset 0 0 100px rgb(0 0 0 / 27%), 0 30px 70px rgb(0 0 0 / 32%); }
+.game-surface { min-height: 760px; position: relative; overflow: hidden; border: 1px solid rgb(183 150 92 / 48%); border-radius: 52px; background: radial-gradient(ellipse at 50% 45%, #286955, #17483c 58%, #10352d); box-shadow: inset 0 0 100px rgb(0 0 0 / 27%), 0 30px 70px rgb(0 0 0 / 32%); }
 .game-surface::before { content: ""; position: absolute; inset: 9px; pointer-events: none; border: 1px solid rgb(242 234 215 / 7%); border-radius: inherit; }
 .game-surface.game-finished { background: radial-gradient(ellipse at 50% 45%, #315c50, #23453d 58%, #18342e); }
 .game-surface.replaying::after { content: "REPLAY"; position: absolute; z-index: 8; top: 20px; right: 28px; padding: 5px 9px; color: var(--brass); border: 1px solid rgb(183 150 92 / 45%); transform: rotate(2deg); background: rgb(9 29 25 / 72%); font: 700 .58rem ui-monospace, "SFMono-Regular", monospace; letter-spacing: .18em; }
@@ -254,13 +254,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .personal-pile .zone-trigger > span, .personal-pile > div > span { display: block; margin-top: 6px; }
 .card-stack { display: flex; justify-content: center; min-height: 82px; }
 .card-stack .playing-card + .playing-card { margin-left: -45px; }
-.live-dealer-rail { position: absolute; z-index: 2; left: 4%; right: 4%; top: 43%; display: flex; justify-content: space-between; align-items: center; padding: 12px 17px; color: var(--sage); border-block: 1px solid rgb(242 234 215 / 16%); background: rgb(5 25 21 / 34%); font: .67rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .11em; }
-.live-dealer-rail strong { color: var(--ivory); font-weight: 700; }
-.public-zones { position: absolute; z-index: 3; top: 26%; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; }
+.public-zones { position: absolute; z-index: 3; top: 24%; bottom: 24%; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 20px; }
+.public-zones.player-lanes { width: min(620px, 82%); flex-direction: column; gap: 12px; }
+.public-seat-lane { display: grid; grid-template-columns: 54px 1fr; width: 100%; align-items: center; gap: 18px; }
+.public-seat-lane.self { grid-template-columns: 1fr 54px; }
+.public-seat-lane.self .lane-label { grid-column: 2; grid-row: 1; text-align: left; }
+.public-seat-lane.self .lane-zones { grid-column: 1; grid-row: 1; justify-content: flex-end; }
+.lane-label { color: var(--brass); font: 700 .6rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .16em; text-align: right; }
+.lane-zones { display: flex; align-items: end; gap: 28px; }
+.showdown-marker { display: flex; width: min(420px, 76%); align-items: center; gap: 11px; color: #d7c59d; font: 700 .57rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .18em; }
+.showdown-marker i { height: 1px; flex: 1; background: linear-gradient(90deg, transparent, rgb(215 197 157 / 42%)); }
+.showdown-marker i:last-child { background: linear-gradient(90deg, rgb(215 197 157 / 42%), transparent); }
+.showdown-marker span::before { content: "◆"; margin-right: 9px; color: var(--coral); font-size: .48rem; }
 .public-zone { display: grid; justify-items: center; gap: 4px; min-width: 75px; color: var(--sage); font: .63rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 .public-zone small { color: #ccdad6; }
+.seat-public-zone { min-width: 100px; color: #d8e4e0; }
+.seat-public-zone > .zone-trigger, .seat-public-zone > .static-zone { min-width: 100px; }
+.seat-public-zone > .zone-trigger > span:first-child, .seat-public-zone > .static-zone > span:first-child { color: var(--brass); letter-spacing: .14em; }
 .static-zone { display: grid; justify-items: center; gap: 4px; padding: 5px; }
 .empty-card-slot { width: 58px; height: 82px; border: 1px dashed rgb(242 234 215 / 22%); border-radius: 7px; }
+.empty-card-slot.main-card-slot { width: 82px; height: 116px; border-color: rgb(226 201 142 / 34%); border-radius: 9px; background: rgb(7 30 25 / 16%); box-shadow: inset 0 0 0 4px rgb(7 30 25 / 9%); }
 .self-seat { position: absolute; z-index: 4; left: 24px; right: 24px; bottom: 24px; text-align: center; }
 .self-zone-row { margin-bottom: 8px; }
 .hand { align-items: flex-end; padding-top: 20px; overflow-x: auto; overflow-y: hidden; }
@@ -364,7 +377,7 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .preset-rack { grid-template-columns: 1fr 1fr; }
   .advanced-grid { grid-template-columns: 1fr; }
   h1 { font-size: clamp(3rem, 15vw, 4.6rem); }
-  .table-preview { height: 290px; border-radius: 70px 70px 24px 24px; }
+  .table-preview { height: 290px; border-radius: 28px; }
   .dealer-rail span:last-child { display: none; }
   .lobby-footer { align-items: flex-start; gap: 20px; }
   .draft-grid { grid-template-columns: 1fr; }
@@ -375,9 +388,14 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .contract-ticket { display: none; }
   .table-meta { flex-wrap: wrap; }
   .game-layout { width: calc(100% - 20px); grid-template-columns: 1fr; }
-  .game-surface { min-height: 570px; border-radius: 70px 70px 24px 24px; }
-  .live-dealer-rail { top: 42%; }
-  .live-dealer-rail span:last-child { display: none; }
+  .game-surface { min-height: 620px; border-radius: 28px; }
+  .public-zones { top: 28%; bottom: 27%; }
+  .public-zones.player-lanes { width: 88%; gap: 7px; }
+  .public-seat-lane { grid-template-columns: 34px 1fr; gap: 8px; }
+  .public-seat-lane.self { grid-template-columns: 1fr 34px; }
+  .lane-zones { gap: 8px; }
+  .showdown-marker { width: 88%; }
+  .empty-card-slot.main-card-slot { width: 68px; height: 97px; }
   .public-zone small { display: none; }
   .playing-card { width: 68px; height: 97px; }
   .hand .playing-card + .playing-card { margin-left: -32px; }

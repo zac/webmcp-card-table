@@ -20,7 +20,7 @@ const REACTION_BUTTONS: { value: Reaction; label: string }[] = [
   { value: "gg", label: "Good game" },
 ];
 
-type ActiveZone = { scope: "public" | "self"; zoneId: string } | null;
+type ActiveZone = { scope: "public"; zoneId: string; ownerSeatId: SeatId | null } | { scope: "self"; zoneId: string } | null;
 
 interface PendingFinishApproval {
   signal?: AbortSignal;
@@ -268,6 +268,11 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
   const interactive = view.status === "active";
   const canAct = interactive && (view.contract.turnOrder === "manual" || view.activeSeatId === view.self.seatId);
   const displayView = replay?.view ?? view;
+  const seatPublicZones = displayView.publicZones.filter((zone) => zone.ownerSeatId !== null);
+  const hasPlayerLanes = seatPublicZones.length > 0;
+  const sharedPublicZones = displayView.publicZones.filter((zone) => zone.ownerSeatId === null && !(hasPlayerLanes && zone.kind === "stock" && zone.cardCount === 0));
+  const opponentPublicZones = seatPublicZones.filter((zone) => zone.ownerSeatId === displayView.opponent.seatId);
+  const selfPublicZones = seatPublicZones.filter((zone) => zone.ownerSeatId === displayView.self.seatId);
   const cleanTableUrl = `${window.location.origin}/table/${roomId}`;
   const toggleCard = (cardId: string) => setSelectedCards((current) => current.includes(cardId) ? current.filter((id) => id !== cardId) : [...current, cardId]);
 
@@ -282,6 +287,20 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       setReplayBusy(false);
     }
   }
+
+  const renderPublicZone = (zone: TableView["publicZones"][number]) => (
+    <PublicZone
+      key={`${zone.ownerSeatId ?? "shared"}:${zone.zoneId}`}
+      zone={zone}
+      view={displayView}
+      selectedCards={selectedCards}
+      interactive={interactive}
+      active={interactive && activeZone?.scope === "public" && activeZone.zoneId === zone.zoneId && activeZone.ownerSeatId === zone.ownerSeatId}
+      disabled={!canAct || busy}
+      onToggle={() => setActiveZone((current) => current?.scope === "public" && current.zoneId === zone.zoneId && current.ownerSeatId === zone.ownerSeatId ? null : { scope: "public", zoneId: zone.zoneId, ownerSeatId: zone.ownerSeatId })}
+      onAction={(action) => void act(action)}
+    />
+  );
 
   return (
     <main className="table-shell">
@@ -302,21 +321,11 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       <section className="game-layout">
         <div className={`game-surface${interactive ? "" : " game-finished"}${displayView.revision !== view.revision ? " replaying" : ""}`} onClick={() => setActiveZone(null)}>
           <OpponentSeat opponent={displayView.opponent} />
-          <div className="live-dealer-rail"><span>{displayView.publicZones.find((zone) => zone.kind === "stock")?.cardCount ?? 0} in stock</span><strong>{interactive ? turnLabel(view) : displayView.revision === view.revision ? "Game over" : `Replay · R${displayView.revision}`}</strong><span>{displayView.contract.turnOrder} turns</span></div>
-          <div className="public-zones">
-            {displayView.publicZones.map((zone) => (
-              <PublicZone
-                key={zone.zoneId}
-                zone={zone}
-                view={displayView}
-                selectedCards={selectedCards}
-                interactive={interactive}
-                active={interactive && activeZone?.scope === "public" && activeZone.zoneId === zone.zoneId}
-                disabled={!canAct || busy}
-                onToggle={() => setActiveZone((current) => current?.scope === "public" && current.zoneId === zone.zoneId ? null : { scope: "public", zoneId: zone.zoneId })}
-                onAction={(action) => void act(action)}
-              />
-            ))}
+          <div className={`public-zones${hasPlayerLanes ? " player-lanes" : ""}`}>
+            {hasPlayerLanes && <PublicSeatLane label="Guest" side="opponent">{orderSeatZones(opponentPublicZones, "opponent").map(renderPublicZone)}</PublicSeatLane>}
+            {hasPlayerLanes && <div className="showdown-marker" aria-label={interactive ? turnLabel(view) : "Game over"}><i /><span>{interactive ? "Showdown" : displayView.revision === view.revision ? "Game over" : `Replay R${displayView.revision}`}</span><i /></div>}
+            {sharedPublicZones.map(renderPublicZone)}
+            {hasPlayerLanes && <PublicSeatLane label="You" side="self">{orderSeatZones(selfPublicZones, "self").map(renderPublicZone)}</PublicSeatLane>}
           </div>
           <SelfSeat
             view={displayView}
@@ -357,6 +366,20 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       )}
     </main>
   );
+}
+
+function PublicSeatLane({ label, side, children }: { label: string; side: "opponent" | "self"; children: ReactNode }) {
+  return (
+    <section className={`public-seat-lane ${side}`} aria-label={`${label} public card area`}>
+      <span className="lane-label">{label}</span>
+      <div className="lane-zones">{children}</div>
+    </section>
+  );
+}
+
+function orderSeatZones(zones: TableView["publicZones"], side: "opponent" | "self") {
+  const order = side === "self" ? ["battle", "war"] : ["war", "battle"];
+  return [...zones].sort((left, right) => order.indexOf(left.zoneId) - order.indexOf(right.zoneId));
 }
 
 function TurnCard({ view, canAct, busy, onAction, onRequestFinish }: { view: TableView; canAct: boolean; busy: boolean; onAction: (action: TableAction) => void; onRequestFinish: () => void }) {
@@ -446,12 +469,15 @@ function PublicZone({ zone, view, selectedCards, interactive, active, disabled, 
   onToggle: () => void;
   onAction: (action: TableAction) => void;
 }) {
-  const label = zone.zoneId.replaceAll("_", " ");
-  const contents = <><span>{label}</span>{zone.cards.length ? <PlayingCard card={zone.cards.at(-1)} compact /> : <div className="empty-card-slot" />}<small>{cardCountLabel(zone.cardCount)}</small></>;
+  const label = zone.ownerSeatId === null
+    ? zone.zoneId.replaceAll("_", " ")
+    : zone.zoneId === "battle" ? "Battle" : zone.zoneId.replaceAll("_", " ");
+  const seatOwned = zone.ownerSeatId !== null;
+  const contents = <><span>{label}</span>{zone.cards.length ? <PlayingCard card={zone.cards.at(-1)} compact={!seatOwned} /> : <div className={`empty-card-slot${seatOwned ? " main-card-slot" : ""}`} />}<small>{cardCountLabel(zone.cardCount)}</small></>;
   return (
-    <div className={`public-zone contextual-zone${active ? " active" : ""}`} onClick={(event) => event.stopPropagation()}>
+    <div className={`public-zone contextual-zone${seatOwned ? " seat-public-zone" : ""}${active ? " active" : ""}`} onClick={(event) => event.stopPropagation()}>
       {interactive ? <button className="zone-trigger public-zone-trigger" type="button" aria-haspopup="menu" aria-expanded={active} aria-label={`${label}, ${cardCountLabel(zone.cardCount)}. Show actions`} onClick={onToggle}>{contents}<span className="zone-affordance" aria-hidden="true">{active ? "×" : "•••"}</span></button> : <div className="static-zone" aria-label={`${label}, ${cardCountLabel(zone.cardCount)}`}>{contents}</div>}
-      {active && <ZoneMenu view={view} scope="public" zoneId={zone.zoneId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />}
+      {active && <ZoneMenu view={view} scope="public" zoneId={zone.zoneId} ownerSeatId={zone.ownerSeatId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />}
     </div>
   );
 }
@@ -483,7 +509,7 @@ function SelfSeat({ view, selectedCards, activeZone, interactive, disabled, onTo
             onToggle={interactive ? () => onToggleZone(zone.zoneId) : undefined}
           >
             {interactive && activeZone?.scope === "self" && activeZone.zoneId === zone.zoneId && (
-              <ZoneMenu view={view} scope="self" zoneId={zone.zoneId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />
+              <ZoneMenu view={view} scope="self" zoneId={zone.zoneId} ownerSeatId={view.self.seatId} kind={zone.kind} cardCount={zone.cardCount} ordered={zone.ordered} selectedCards={selectedCards} disabled={disabled} onAction={onAction} />
             )}
           </CardPile>
         ))}
@@ -527,10 +553,11 @@ function CardPile({ label, count, ordered, cards = [], active = false, onToggle,
   );
 }
 
-function ZoneMenu({ view, scope, zoneId, kind, cardCount, ordered, selectedCards, disabled, onAction }: {
+function ZoneMenu({ view, scope, zoneId, ownerSeatId, kind, cardCount, ordered, selectedCards, disabled, onAction }: {
   view: TableView;
   scope: "public" | "self";
   zoneId: string;
+  ownerSeatId: SeatId | null;
   kind: TableView["publicZones"][number]["kind"];
   cardCount: number;
   ordered: boolean;
@@ -540,14 +567,15 @@ function ZoneMenu({ view, scope, zoneId, kind, cardCount, ordered, selectedCards
 }) {
   const allowed = new Set(view.contract.allowedActions);
   const orderedPersonalZones = view.self.zones.filter((zone) => zone.ordered);
-  const preferredTargets = view.publicZones.filter((zone) => zone.kind !== "stock");
-  const publicTargets = preferredTargets.length > 0 ? preferredTargets : view.publicZones;
+  const availableTargets = view.publicZones.filter((zone) => zone.ownerSeatId === null || zone.ownerSeatId === view.self.seatId);
+  const preferredTargets = availableTargets.filter((zone) => zone.kind !== "stock");
+  const publicTargets = preferredTargets.length > 0 ? preferredTargets : availableTargets;
   const canDraw = scope === "public" && kind === "stock" && allowed.has("draw") && cardCount > 0;
   const canDeal = scope === "public" && kind === "stock" && allowed.has("deal") && cardCount >= 2;
-  const canMove = scope === "public" && kind !== "stock" && allowed.has("move") && selectedCards.length > 0;
+  const canMove = scope === "public" && kind !== "stock" && (ownerSeatId === null || ownerSeatId === view.self.seatId) && allowed.has("move") && selectedCards.length > 0;
   const canCollect = scope === "public" && kind !== "stock" && allowed.has("collect") && cardCount > 0 && orderedPersonalZones.length > 0;
   const canPlayNext = scope === "self" && ordered && allowed.has("play_next") && cardCount > 0 && publicTargets.length > 0;
-  const canShuffle = allowed.has("shuffle") && cardCount > 1;
+  const canShuffle = (ownerSeatId === null || ownerSeatId === view.self.seatId) && allowed.has("shuffle") && cardCount > 1;
   const hasAction = canDraw || canDeal || canMove || canCollect || canPlayNext || canShuffle;
 
   return (
@@ -556,8 +584,8 @@ function ZoneMenu({ view, scope, zoneId, kind, cardCount, ordered, selectedCards
       {canDraw && <button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "draw", zoneId, count: 1 })}>Draw 1 to hand</button>}
       {canDeal && <button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "deal", zoneId, countPerSeat: 1 })}>Deal 1 to each seat</button>}
       {canMove && <><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "up" })}>Play selected face up</button><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "move", cardIds: selectedCards, zoneId, face: "down" })}>Play selected face down</button></>}
-      {canPlayNext && publicTargets.map((target) => <div className="zone-menu-pair" key={target.zoneId}><span>To {target.zoneId.replaceAll("_", " ")}</span><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "play_next", sourceZoneId: zoneId, targetZoneId: target.zoneId, face: "up" })}>Next face up</button><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "play_next", sourceZoneId: zoneId, targetZoneId: target.zoneId, face: "down" })}>Next face down</button></div>)}
-      {canCollect && orderedPersonalZones.map((target) => <div className="zone-menu-pair" key={target.zoneId}><span>To your {target.zoneId.replaceAll("_", " ")}</span><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "collect", sourceZoneId: zoneId, targetZoneId: target.zoneId, placement: "bottom" })}>Collect to bottom</button><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "collect", sourceZoneId: zoneId, targetZoneId: target.zoneId, placement: "top" })}>Collect to top</button></div>)}
+      {canPlayNext && publicTargets.map((target) => <div className="zone-menu-pair" key={`${target.ownerSeatId ?? "shared"}:${target.zoneId}`}><span>To {target.ownerSeatId === view.self.seatId ? "your " : ""}{target.zoneId === "battle" ? "battle slot" : target.zoneId.replaceAll("_", " ")}</span><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "play_next", sourceZoneId: zoneId, targetZoneId: target.zoneId, face: "up" })}>Next face up</button><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "play_next", sourceZoneId: zoneId, targetZoneId: target.zoneId, face: "down" })}>Next face down</button></div>)}
+      {canCollect && orderedPersonalZones.map((target) => <div className="zone-menu-pair" key={target.zoneId}><span>To your {target.zoneId.replaceAll("_", " ")}</span><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "collect", sourceZoneId: zoneId, ...(ownerSeatId ? { sourceSeatId: ownerSeatId } : {}), targetZoneId: target.zoneId, placement: "bottom" })}>Collect to bottom</button><button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "collect", sourceZoneId: zoneId, ...(ownerSeatId ? { sourceSeatId: ownerSeatId } : {}), targetZoneId: target.zoneId, placement: "top" })}>Collect to top</button></div>)}
       {canShuffle && <button role="menuitem" type="button" disabled={disabled} onClick={() => onAction({ type: "shuffle", zoneId })}>Shuffle pile</button>}
       {!hasAction && scope === "public" && kind !== "stock" && allowed.has("move") && selectedCards.length === 0 && <p>Select cards from your hand to play them here.</p>}
       {!hasAction && !(scope === "public" && kind !== "stock" && allowed.has("move")) && <p>No actions are available for this pile.</p>}
