@@ -3,7 +3,12 @@ import { GameError } from "./engine";
 
 const MAX_VIEW_EVENTS = 30;
 
-export function projectTable(state: TableState, seatId: SeatId): TableView {
+export interface ProjectionPresence {
+  joinedSeatIds?: readonly SeatId[];
+  onlineSeatIds?: readonly SeatId[];
+}
+
+export function projectTable(state: TableState, seatId: SeatId, presence: ProjectionPresence = {}): TableView {
   const self = state.seats.find((seat) => seat.seatId === seatId);
   const opponent = state.seats.find((seat) => seat.seatId !== seatId);
   if (!self || !opponent) throw new GameError("unknown_seat", "The caller is not seated at this table", 403);
@@ -31,6 +36,9 @@ export function projectTable(state: TableState, seatId: SeatId): TableView {
     },
     opponent: {
       seatId: opponent.seatId,
+      presence: !presence.joinedSeatIds?.includes(opponent.seatId)
+        ? "waiting"
+        : presence.onlineSeatIds?.includes(opponent.seatId) ? "online" : "offline",
       cardCount: opponent.hand.length,
       zones: state.zones
         .filter((zone) => zone.ownerSeatId === opponent.seatId)

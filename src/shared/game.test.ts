@@ -54,6 +54,7 @@ describe("contracts", () => {
   it("ships presets as ordinary validated contracts", () => {
     expect(GAME_PRESETS.map((preset) => preset.id)).toEqual(["go_fish", "crazy_eights", "war", "open_table"]);
     expect(GAME_PRESETS.find((preset) => preset.id === "crazy_eights")?.contract.allowedActions).toEqual(["draw", "move", "shuffle", "announce", "react", "end_turn"]);
+    expect(GAME_PRESETS.find((preset) => preset.id === "war")?.contract.allowedActions).not.toContain("end_turn");
     expect(GAME_PRESETS.find((preset) => preset.id === "go_fish")?.contract.allowedActions).not.toContain("deal");
     for (const preset of GAME_PRESETS) expect(validateContract(preset.contract)).toEqual(preset.contract);
   });
@@ -244,6 +245,13 @@ describe("seat projection", () => {
     }
     const stockCard = initial.zones.find((zone) => zone.id === "stock")?.cards[0].card;
     expect(view.publicZones[0].cards[0]).toEqual({ id: stockCard?.id, face: "down" });
+  });
+
+  it("projects waiting, joined-offline, and online opponent states without exposing sessions", () => {
+    const initial = table();
+    expect(projectTable(initial, "host").opponent.presence).toBe("waiting");
+    expect(projectTable(initial, "host", { joinedSeatIds: ["host", "guest"] }).opponent.presence).toBe("offline");
+    expect(projectTable(initial, "host", { joinedSeatIds: ["host", "guest"], onlineSeatIds: ["guest"] }).opponent.presence).toBe("online");
   });
 
   it("hides an ordered personal deck from its owner and the opponent", () => {

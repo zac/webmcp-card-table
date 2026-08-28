@@ -147,7 +147,7 @@ export const GAME_PRESETS: GamePreset[] = [
         { id: "battle", kind: "pile", facing: "up", scope: "shared", visibility: "public", ordered: true },
         { id: "deck", kind: "pile", facing: "down", scope: "seat", visibility: "hidden", ordered: true },
       ],
-      allowedActions: ["play_next", "collect", "shuffle", "announce", "react", "end_turn"],
+      allowedActions: ["play_next", "collect", "shuffle", "announce", "react"],
     },
   },
   {

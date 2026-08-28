@@ -14,7 +14,7 @@ function view(): TableView {
   return {
     roomId: "room-1", revision: 3, contract, activeSeatId: "host", status: "active", winnerSeatId: null,
     self: { seatId: "host", hand: [{ id: "opaque-1", rank: "A", suit: "spades" }], zones: [] },
-    opponent: { seatId: "guest", cardCount: 7, zones: [] },
+    opponent: { seatId: "guest", presence: "online", cardCount: 7, zones: [] },
     publicZones: [{ zoneId: "stock", kind: "stock", ordered: true, cardCount: 37, cards: [{ id: "opaque-2", face: "down" }] }], recentEvents: [],
   };
 }

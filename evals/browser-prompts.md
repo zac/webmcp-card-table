@@ -27,17 +27,21 @@ These prompts are a small manual regression set for ChatGPT's in-app browser or 
 
 ## Invited seat
 
-1. Open the supplied one-use invite and confirm the fragment disappears after redemption.
-2. Inspect your seat and verify it differs from the host's private hand and personal zones.
-3. Respond to the host's latest announcement using only your own hand and public state.
+1. Before opening the invite, confirm the host says Waiting for guest.
+2. Open the supplied one-use invite and confirm the fragment disappears after redemption.
+3. Confirm the host records Guest joined the table and changes to Guest joined · online before the guest plays a card.
+4. Close the guest page and confirm the host changes to Guest joined · offline without changing the game revision.
+5. Reopen the guest seat, wait until the page header says WebMCP ready, then inspect your seat and verify it differs from the host's private hand and personal zones.
+6. Respond to the host's latest announcement using only your own hand and public state.
 
 ## War and shared browser storage
 
-1. Open War as the host. Verify your 26-card deck exposes only a count and that `play_next_card` and `collect_pile` are registered.
+1. Open War as the host. Verify your 26-card deck exposes only a count, `play_next_card` and `collect_pile` are registered, and `end_turn` is absent.
 2. Copy the guest prompt into a second Codex thread that uses the same in-app browser storage.
 3. Play one face-up card from each deck. Confirm both threads retain their own seat and neither can inspect upcoming cards.
 4. Let the higher card collect the battle pile to the bottom of its deck. Confirm the winner has 27 cards, the other seat has 25, and battle is empty.
 5. Refresh the page and confirm the same seat and current revision recover.
+6. Confirm the manual table says Either seat can act rather than telling both seats Your move.
 
 ## End game and replay
 

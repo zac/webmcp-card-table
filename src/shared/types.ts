@@ -6,6 +6,7 @@ export type Rank = (typeof RANKS)[number];
 export type Suit = (typeof SUITS)[number];
 export type Reaction = (typeof REACTIONS)[number];
 export type SeatId = "host" | "guest";
+export type SeatPresence = "waiting" | "online" | "offline";
 
 export type GenericActionName =
   | "deal"
@@ -77,6 +78,7 @@ export type TableAction =
 
 export type TableEventType =
   | "room_created"
+  | "seat_joined"
   | "cards_dealt"
   | "cards_drawn"
   | "cards_moved"
@@ -163,7 +165,7 @@ export interface TableView {
   status: TableState["status"];
   winnerSeatId: SeatId | null;
   self: { seatId: SeatId; hand: CardView[]; zones: SeatZoneView[] };
-  opponent: { seatId: SeatId; cardCount: number; zones: OpponentZoneView[] };
+  opponent: { seatId: SeatId; presence: SeatPresence; cardCount: number; zones: OpponentZoneView[] };
   publicZones: PublicZoneView[];
   recentEvents: TableEvent[];
 }

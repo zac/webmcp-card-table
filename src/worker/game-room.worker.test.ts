@@ -35,7 +35,9 @@ describe("GameRoom", () => {
     const stub = env.GAME_ROOM.getByName("invite-room");
     await stub.createRoom(createInput("invite-room"));
     const redeemed = await stub.redeemInvite("aW52aXRl", "Z3Vlc3Q", Date.now());
-    expect(redeemed.ok && redeemed.value.self.seatId).toBe("guest");
+    expect(redeemed.ok && redeemed.value).toMatchObject({ revision: 1, self: { seatId: "guest" }, opponent: { presence: "offline" } });
+    const host = await stub.getView("aG9zdA", "host");
+    expect(host.ok && host.value).toMatchObject({ revision: 1, opponent: { presence: "offline" }, recentEvents: [{ type: "room_created" }, { type: "seat_joined" }] });
     const repeated = await stub.redeemInvite("aW52aXRl", "YW5vdGhlcg", Date.now());
     expect(repeated.ok).toBe(false);
     if (!repeated.ok) expect(repeated.error.code).toBe("invite_used");
@@ -63,15 +65,15 @@ describe("GameRoom", () => {
     const played = await stub.performAction(
       "aG9zdA",
       "host",
-      { actionId: "opening-reaction", expectedRevision: 0, action: { type: "react", reaction: "thinking" } },
+      { actionId: "opening-reaction", expectedRevision: 1, action: { type: "react", reaction: "thinking" } },
       Date.now(),
     );
-    expect(played.ok && played.value.revision).toBe(1);
+    expect(played.ok && played.value.revision).toBe(2);
 
     const guestAttempt = await stub.performAction(
       "Z3Vlc3Q",
       "guest",
-      { actionId: "guest-finish", expectedRevision: 1, action: { type: "finish_game" } },
+      { actionId: "guest-finish", expectedRevision: 2, action: { type: "finish_game" } },
       Date.now(),
     );
     expect(guestAttempt.ok).toBe(false);
@@ -80,25 +82,25 @@ describe("GameRoom", () => {
     const finished = await stub.performAction(
       "aG9zdA",
       "host",
-      { actionId: "host-finish", expectedRevision: 1, action: { type: "finish_game" } },
+      { actionId: "host-finish", expectedRevision: 2, action: { type: "finish_game" } },
       Date.now(),
     );
-    expect(finished.ok && finished.value).toMatchObject({ revision: 2, status: "finished", activeSeatId: null });
+    expect(finished.ok && finished.value).toMatchObject({ revision: 3, status: "finished", activeSeatId: null });
 
     const hostOpening = await stub.getReplay("aG9zdA", "host", 0);
-    expect(hostOpening.ok && hostOpening.value).toMatchObject({ currentRevision: 2, revisions: [0, 1, 2], view: { revision: 0, status: "active", self: { seatId: "host" } } });
+    expect(hostOpening.ok && hostOpening.value).toMatchObject({ currentRevision: 3, revisions: [0, 1, 2, 3], view: { revision: 0, status: "active", self: { seatId: "host" } } });
     const guestOpening = await stub.getReplay("Z3Vlc3Q", "guest", 0);
     expect(guestOpening.ok && guestOpening.value).toMatchObject({ view: { revision: 0, self: { seatId: "guest" } } });
     if (hostOpening.ok && guestOpening.ok) {
       expect(hostOpening.value.view.self.hand[0]?.id).not.toBe(guestOpening.value.view.self.hand[0]?.id);
     }
     const finalReplay = await stub.getReplay("aG9zdA", "host", null);
-    expect(finalReplay.ok && finalReplay.value.view).toMatchObject({ revision: 2, status: "finished" });
+    expect(finalReplay.ok && finalReplay.value.view).toMatchObject({ revision: 3, status: "finished" });
 
     const afterFinish = await stub.performAction(
       "aG9zdA",
       "host",
-      { actionId: "too-late", expectedRevision: 2, action: { type: "react", reaction: "well_played" } },
+      { actionId: "too-late", expectedRevision: 3, action: { type: "react", reaction: "well_played" } },
       Date.now(),
     );
     expect(afterFinish.ok).toBe(false);
@@ -153,6 +155,43 @@ describe("GameRoom", () => {
     );
     expect(await resumedUpdate).toMatchObject({ type: "update", revision: 2, view: { revision: 2 } });
     socket.close(1000, "done");
+  });
+
+  it("broadcasts guest redemption and live presence without waiting for a card play", async () => {
+    const stub = env.GAME_ROOM.getByName("presence-room");
+    const created = await stub.createRoom(createInput("presence-room"));
+    expect(created.ok && created.value.opponent.presence).toBe("waiting");
+
+    const hostResponse = await stub.fetch(new Request("https://room.internal/socket", {
+      headers: { upgrade: "websocket", "x-session-hash": "aG9zdA", "x-seat-id": "host" },
+    }));
+    const hostSocket = hostResponse.webSocket;
+    expect(hostSocket).not.toBeNull();
+    if (!hostSocket) return;
+    hostSocket.accept();
+    const hostSnapshot = nextSocketMessage(hostSocket);
+    hostSocket.send(JSON.stringify({ type: "hello", lastRevision: 99 }));
+    expect(await hostSnapshot).toMatchObject({ type: "snapshot", view: { revision: 0, opponent: { presence: "waiting" } } });
+
+    const joinedUpdate = nextSocketMessage(hostSocket);
+    const redeemed = await stub.redeemInvite("aW52aXRl", "Z3Vlc3Q", Date.now());
+    expect(redeemed.ok && redeemed.value).toMatchObject({ revision: 1, opponent: { presence: "online" } });
+    expect(await joinedUpdate).toMatchObject({ type: "update", revision: 1, view: { opponent: { presence: "offline" } }, events: [{ type: "seat_joined" }] });
+
+    const guestOnline = nextSocketMessage(hostSocket);
+    const guestResponse = await stub.fetch(new Request("https://room.internal/socket", {
+      headers: { upgrade: "websocket", "x-session-hash": "Z3Vlc3Q", "x-seat-id": "guest" },
+    }));
+    const guestSocket = guestResponse.webSocket;
+    expect(guestSocket).not.toBeNull();
+    expect(await guestOnline).toMatchObject({ type: "presence", opponentPresence: "online" });
+    if (!guestSocket) return;
+    guestSocket.accept();
+
+    const guestOffline = nextSocketMessage(hostSocket);
+    guestSocket.close(1000, "done");
+    expect(await guestOffline).toMatchObject({ type: "presence", opponentPresence: "offline" });
+    hostSocket.close(1000, "done");
   });
 
   it("schedules and expires an inactive room", async () => {

@@ -202,13 +202,13 @@ interface PendingApproval {
   reject: (reason: unknown) => void;
 }
 
-export function SiteHeader({ onHome }: { onHome?: () => void }) {
+export function SiteHeader({ onHome, status = "WebMCP ready" }: { onHome?: () => void; status?: string }) {
   return (
     <header className="site-header">
       <button className="wordmark" type="button" onClick={onHome} aria-label="Card Table home">
         <span className="suit-mark" aria-hidden="true">♠</span>Card Table
       </button>
-      <span className="status-chip"><i aria-hidden="true" /> WebMCP ready</span>
+      <span className={`status-chip${status === "WebMCP ready" ? "" : " pending"}`}><i aria-hidden="true" /> {status}</span>
     </header>
   );
 }

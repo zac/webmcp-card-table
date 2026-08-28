@@ -4,6 +4,7 @@ import {
   createTable,
   GameError,
   projectTable,
+  recordSeatJoined,
   type ActionEnvelope,
   type GameContract,
   type RoomReplay,
@@ -92,7 +93,7 @@ export class GameRoom extends DurableObject<Env> {
         this.persistState(state, state.events);
       });
       await this.scheduleNextAlarm(state);
-      return { ok: true, value: projectTable(state, input.seatIds[0]) };
+      return { ok: true, value: this.projectForSeat(state, input.seatIds[0]) };
     } catch (error) {
       return failure(error);
     }
@@ -107,11 +108,17 @@ export class GameRoom extends DurableObject<Env> {
       if (invite.redeemed_at !== null) throw new GameError("invite_used", "This invite has already been redeemed", 409);
       if (!secureHashEqual(inviteHash, invite.token_hash)) throw new GameError("invalid_invite", "Invite token is invalid", 403);
       const guestSeat = state.seats[1].seatId;
+      const next = recordSeatJoined(state, guestSeat, { now, eventId: () => crypto.randomUUID() });
+      const joinEvent = next.events.at(-1);
+      if (!joinEvent || joinEvent.type !== "seat_joined") throw new GameError("join_failed", "The guest seat could not be recorded", 500);
       this.ctx.storage.transactionSync(() => {
         this.ctx.storage.sql.exec("UPDATE invite SET redeemed_at = ? WHERE id = 1", now);
         this.ctx.storage.sql.exec("INSERT INTO sessions (session_hash, seat_id) VALUES (?, ?)", sessionHash, guestSeat);
+        this.persistState(next, [joinEvent]);
       });
-      return { ok: true, value: projectTable(state, guestSeat) };
+      this.broadcastUpdate(next, [joinEvent]);
+      await this.scheduleNextAlarm(next);
+      return { ok: true, value: this.projectForSeat(next, guestSeat) };
     } catch (error) {
       return failure(error);
     }
@@ -121,7 +128,7 @@ export class GameRoom extends DurableObject<Env> {
     try {
       const state = this.requireState();
       const seatId = this.authenticate(sessionHash, expectedSeatId);
-      return { ok: true, value: projectTable(state, seatId) };
+      return { ok: true, value: this.projectForSeat(state, seatId) };
     } catch (error) {
       return failure(error);
     }
@@ -143,7 +150,7 @@ export class GameRoom extends DurableObject<Env> {
       const state = normalizeState(JSON.parse(row.state_json) as TableState | LegacyTableState);
       return {
         ok: true,
-        value: { currentRevision: current.revision, revisions, view: projectTable(state, seatId) },
+        value: { currentRevision: current.revision, revisions, view: this.projectForSeat(state, seatId) },
       };
     } catch (error) {
       return failure(error);
@@ -164,7 +171,7 @@ export class GameRoom extends DurableObject<Env> {
       this.ctx.storage.transactionSync(() => this.persistState(next, newEvents));
       this.broadcastUpdate(next, newEvents);
       await this.scheduleNextAlarm(next);
-      return { ok: true, value: projectTable(next, seatId) };
+      return { ok: true, value: this.projectForSeat(next, seatId) };
     } catch (error) {
       return failure(error);
     }
@@ -184,6 +191,7 @@ export class GameRoom extends DurableObject<Env> {
       const [client, server] = Object.values(pair);
       server.serializeAttachment({ seatId, lastRevision: null } satisfies SocketAttachment);
       this.ctx.acceptWebSocket(server, [seatId]);
+      this.broadcastPresence(this.requireState(), server);
       return new Response(null, { status: 101, webSocket: client });
     } catch (error) {
       const result = failure(error);
@@ -212,10 +220,20 @@ export class GameRoom extends DurableObject<Env> {
     attachment.lastRevision = state.revision;
     socket.serializeAttachment(attachment);
     if (value.lastRevision !== state.revision) {
-      socket.send(JSON.stringify({ type: "snapshot", view: projectTable(state, attachment.seatId) }));
+      socket.send(JSON.stringify({ type: "snapshot", view: this.projectForSeat(state, attachment.seatId) }));
     } else {
       socket.send(JSON.stringify({ type: "ready", revision: state.revision }));
     }
+  }
+
+  webSocketClose(socket: WebSocket): void {
+    const state = this.loadState();
+    if (state) this.broadcastPresence(state, socket, socket);
+  }
+
+  webSocketError(socket: WebSocket): void {
+    const state = this.loadState();
+    if (state) this.broadcastPresence(state, socket, socket);
   }
 
   async alarm(): Promise<void> {
@@ -282,6 +300,14 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
+  private projectForSeat(state: TableState, seatId: SeatId, ignoredSocket: WebSocket | null = null): TableView {
+    const joinedSeatIds = this.ctx.storage.sql.exec<{ seat_id: SeatId }>("SELECT DISTINCT seat_id FROM sessions").toArray().map((row) => row.seat_id);
+    const onlineSeatIds = state.seats
+      .map((seat) => seat.seatId)
+      .filter((candidate) => this.ctx.getWebSockets(candidate).some((socket) => socket !== ignoredSocket));
+    return projectTable(state, seatId, { joinedSeatIds, onlineSeatIds });
+  }
+
   private broadcastUpdate(state: TableState, events: TableEvent[]): void {
     for (const socket of this.ctx.getWebSockets()) {
       try {
@@ -290,7 +316,7 @@ export class GameRoom extends DurableObject<Env> {
           type: "update",
           revision: state.revision,
           events,
-          view: projectTable(state, attachment.seatId),
+          view: this.projectForSeat(state, attachment.seatId),
         }));
         attachment.lastRevision = state.revision;
         socket.serializeAttachment(attachment);
@@ -298,6 +324,23 @@ export class GameRoom extends DurableObject<Env> {
         console.error(JSON.stringify({
           level: "warn",
           event: "socket_broadcast_failed",
+          error: error instanceof Error ? error.message : "unknown",
+        }));
+      }
+    }
+  }
+
+  private broadcastPresence(state: TableState, recipientToSkip: WebSocket | null = null, ignoredSocket: WebSocket | null = null): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket === recipientToSkip) continue;
+      try {
+        const attachment = readAttachment(socket);
+        const opponentPresence = this.projectForSeat(state, attachment.seatId, ignoredSocket).opponent.presence;
+        socket.send(JSON.stringify({ type: "presence", opponentPresence }));
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "warn",
+          event: "socket_presence_failed",
           error: error instanceof Error ? error.message : "unknown",
         }));
       }

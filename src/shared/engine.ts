@@ -100,6 +100,28 @@ export function createTable(options: CreateTableOptions): TableState {
   return state;
 }
 
+export function recordSeatJoined(state: TableState, seatId: SeatId, dependencies: Pick<EngineDependencies, "now" | "eventId">): TableState {
+  if (!state.seats.some((seat) => seat.seatId === seatId)) {
+    throw new GameError("unknown_seat", "The joining seat does not exist", 404);
+  }
+  if (state.status !== "active") {
+    throw new GameError("room_inactive", "This table is no longer accepting players", 409);
+  }
+  const next = structuredClone(state);
+  next.revision += 1;
+  next.lastActivityAt = dependencies.now;
+  next.expiresAt = dependencies.now + ROOM_TTL_MS;
+  next.events = [...next.events, {
+    id: dependencies.eventId(),
+    revision: next.revision,
+    type: "seat_joined" as const,
+    actorSeatId: seatId,
+    at: dependencies.now,
+    data: { seatId },
+  }].slice(-MAX_EVENTS);
+  return next;
+}
+
 export function applyAction(
   current: TableState,
   actorSeatId: SeatId,

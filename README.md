@@ -8,7 +8,7 @@ The product has one shape:
 
 1. Pick Go Fish, Crazy Eights, War, or Open Table as a starting point.
 2. Edit the plain-language game brief and optional table mechanics.
-3. Open the table and copy a one-use guest invite, a ready-made guest Codex prompt, or a prompt for Codex to play your own seat.
+3. Open the table and copy a one-use guest invite, a ready-made guest Codex prompt, or a prompt for Codex to play your own seat. The host sees when the invite is claimed and whether the guest is online.
 4. Play by clicking cards and piles, through WebMCP tools, or both. Every action uses the same reducer and server authorization path.
 5. When play is over, the host confirms **End game**. The room freezes for both seats and becomes a read-only revision replay instead of disappearing.
 
@@ -43,7 +43,7 @@ At a table, tools are registered only when the contract allows the matching acti
 - `end_turn`
 - `finish_table` (host only; waits for in-page confirmation)
 
-`play_next_card` moves the next card from an ordered personal pile without revealing it first. `collect_pile` moves a shared pile to the top or bottom of an ordered personal pile. Together they let the ordinary War preset use face-down decks without adding a War-specific game engine.
+`play_next_card` moves the next card from an ordered personal pile without revealing it first. `collect_pile` moves a shared pile to the top or bottom of an ordered personal pile. Together they let the ordinary War preset use face-down decks without adding a War-specific game engine. War intentionally does not register `end_turn`: either seat can act, and the visible battle pile communicates the phase.
 
 `announce` is a bounded 160-character public game channel. It lets players make requests and declarations such as "Do you have any queens?" or "Eights are hearts" without adding a general-purpose chat product.
 
@@ -63,7 +63,7 @@ Ending a game is a server-authorized host action. It changes the room to a termi
 
 Seat sessions use separate room-and-seat-scoped `HttpOnly`, `Secure`, `SameSite=Strict` cookies. A tab keeps only its non-secret `host` or `guest` selector in `sessionStorage`, then sends that selector with HTTP and WebSocket requests. This lets two Codex threads share one browser cookie jar without replacing each other's credentials. The server still requires the matching seat cookie.
 
-Guest invite tokens live in URL fragments, are redeemed once, and are removed from the address bar before the browser makes a room request. Request logs never include bodies, cookies, invite tokens, prompts, announcements, or card faces.
+Guest invite tokens live in URL fragments, are redeemed once, and are removed from the address bar before the browser makes a room request. Redemption records a `seat_joined` revision and immediately broadcasts it to the host. Hibernatable socket presence then distinguishes waiting, joined-online, and joined-offline without persisting browser connection details. Request logs never include bodies, cookies, invite tokens, prompts, announcements, or card faces.
 
 ## Architecture
 
@@ -102,7 +102,7 @@ pnpm build
 pnpm deploy:dry
 ```
 
-`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build. The suites cover reducer invariants, prompt and message bounds, authorization, revisions, idempotency, hidden ordered zones, next-card play, pile collection, visibility projections, shuffled-card identity, room persistence, one-use invites, two-seat shared-cookie isolation, WebSocket resynchronization, hibernation, expiry, host-only game completion, seat-projected replay, tool registration, approval, and cancellation forwarding.
+`pnpm check` runs linting, type checking, shared and WebMCP unit tests, Worker integration tests, and the production build. The suites cover reducer invariants, prompt and message bounds, authorization, revisions, idempotency, hidden ordered zones, next-card play, pile collection, visibility projections, shuffled-card identity, room persistence, one-use invites, join events, online/offline presence, two-seat shared-cookie isolation, WebSocket resynchronization, hibernation, expiry, host-only game completion, seat-projected replay, tool registration, approval, and cancellation forwarding.
 
 For a browser acceptance pass:
 
@@ -111,8 +111,8 @@ For a browser acceptance pass:
 3. Draft a preset or custom game and confirm the visible rules slip changes.
 4. Call `start_table`; decline once, then call it again and approve.
 5. Confirm the table registry matches the contract, call `inspect_table`, and make one legal mutation.
-6. Copy the guest Codex prompt, redeem the invitation in a second Codex thread that shares browser storage, and confirm both tabs keep the correct seat plus real-time updates.
-7. For War, confirm both decks show counts and backs only, then call `play_next_card` from each seat and `collect_pile` from the winner.
+6. Copy the guest Codex prompt, redeem the invitation in a second Codex thread that shares browser storage, and confirm the host changes from Waiting for guest to Guest joined · online before the guest plays a card.
+7. For War, confirm both decks show counts and backs only, `end_turn` is absent, then call `play_next_card` from each seat and `collect_pile` from the winner.
 8. Refresh both seats and confirm they recover the current projected snapshot.
 9. As the guest, confirm `finish_table` and the End game control are absent. As the host, call `finish_table`, decline once, then approve it.
 10. Confirm both seats freeze, only `inspect_table` remains registered, and the replay transport can move between recorded revisions without revealing the other seat's cards.

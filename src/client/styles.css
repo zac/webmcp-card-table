@@ -53,6 +53,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .status-chip { display: inline-flex; align-items: center; gap: 7px; color: var(--sage); }
 .status-chip i { width: 7px; height: 7px; border-radius: 50%; background: #6dc49e; box-shadow: 0 0 0 4px rgb(109 196 158 / 12%); }
+.status-chip.pending i { background: var(--brass); box-shadow: none; }
 
 .dealer-station {
   width: min(1180px, calc(100% - 40px));
@@ -233,6 +234,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .connection-dot.live { background: #6dc49e; box-shadow: 0 0 0 4px rgb(109 196 158 / 12%); }
 .connection-dot.offline { background: var(--coral); }
 .copy-invite { border: 1px solid rgb(242 234 215 / 22%); border-radius: 999px; padding: 7px 10px; color: var(--ivory); background: transparent; cursor: pointer; text-transform: uppercase; letter-spacing: .08em; font-size: .64rem; }
+.invite-claimed { border: 1px solid rgb(109 196 158 / 28%); border-radius: 999px; padding: 7px 10px; color: #9ed8be; background: rgb(109 196 158 / 8%); font: .64rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 
 .game-layout { width: min(1380px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding-bottom: 28px; }
 .game-surface { min-height: 700px; position: relative; overflow: hidden; border: 1px solid rgb(183 150 92 / 48%); border-radius: 140px 140px 34px 34px / 80px 80px 34px 34px; background: radial-gradient(ellipse at 50% 45%, #286955, #17483c 58%, #10352d); box-shadow: inset 0 0 100px rgb(0 0 0 / 27%), 0 30px 70px rgb(0 0 0 / 32%); }
@@ -243,6 +245,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .opponent-hand, .hand { display: flex; justify-content: center; min-height: 118px; }
 .opponent-hand .playing-card + .playing-card { margin-left: -48px; }
 .opponent-seat .seat-label, .self-seat .seat-label { display: block; margin-top: 8px; color: #dbe5e2; }
+.opponent-seat .seat-presence { display: inline-flex; align-items: center; gap: 8px; }
+.seat-presence i { width: 7px; height: 7px; border-radius: 50%; background: #9b8b71; }
+.seat-presence.online i { background: #6dc49e; box-shadow: 0 0 0 4px rgb(109 196 158 / 12%); }
+.seat-presence.offline i { background: var(--coral); }
 .seat-zone-row { display: flex; justify-content: center; align-items: end; gap: 28px; min-height: 96px; }
 .personal-pile { min-width: 92px; color: #dbe5e2; text-align: center; font: .62rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 .personal-pile .zone-trigger > span, .personal-pile > div > span { display: block; margin-top: 6px; }

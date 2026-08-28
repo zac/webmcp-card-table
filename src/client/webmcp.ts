@@ -243,7 +243,7 @@ function viewSummary(view: TableView) {
     yourSeatId: view.self.seatId,
     yourHand: view.self.hand.map((card) => ({ id: card.id, rank: card.rank, suit: card.suit })),
     yourZones: view.self.zones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, visibility: zone.visibility, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
-    opponent: { seatId: view.opponent.seatId, handCardCount: view.opponent.cardCount, zones: view.opponent.zones },
+    opponent: { seatId: view.opponent.seatId, presence: view.opponent.presence, handCardCount: view.opponent.cardCount, zones: view.opponent.zones },
     publicZones: view.publicZones.map((zone) => ({ zoneId: zone.zoneId, kind: zone.kind, ordered: zone.ordered, cardCount: zone.cardCount, topCard: zone.cards.at(-1) })),
     rules: contractSummary(view.contract),
     recentEvents: view.recentEvents.slice(-5).map(eventSummary),
