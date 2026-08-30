@@ -21,7 +21,8 @@
   "current_stage": "resources",
   "completed_stages": [
     "start-hackathon",
-    "review"
+    "review",
+    "resources"
   ],
   "rules_acknowledged": true,
   "learning": {
@@ -35,5 +36,5 @@
     "draft_file": "devpost-submission.md",
     "status": "not-started"
   },
-  "next_command": "resources"
+  "next_command": "prepare-submission"
 }
