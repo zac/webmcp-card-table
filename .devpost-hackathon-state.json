@@ -13,12 +13,12 @@
     "display_name": ""
   },
   "project": {
-    "name": "webmcp-card-table",
-    "summary": "A live two-player playing-card table designed for people and their agents to use together through direct controls and browser-native WebMCP tools.",
-    "ai_usage": "",
-    "codex_usage": ""
+    "name": "Card Table",
+    "summary": "A live, prompt-defined card table where people and browser agents play the same two-seat games through direct controls or WebMCP tools.",
+    "ai_usage": "Browser agents read seat-projected table state and a human-written game brief, then act through bounded WebMCP tools while the server enforces privacy and authority.",
+    "codex_usage": "Codex helped plan, implement, test, deploy, and play the app; live two-thread smoke tests drove fixes to seat identity, zones, presence, contextual controls, and card motion."
   },
-  "current_stage": "resources",
+  "current_stage": "prepare-submission",
   "completed_stages": [
     "start-hackathon",
     "review",
@@ -34,7 +34,7 @@
   },
   "submission": {
     "draft_file": "devpost-submission.md",
-    "status": "not-started"
+    "status": "drafting"
   },
   "next_command": "prepare-submission"
 }
