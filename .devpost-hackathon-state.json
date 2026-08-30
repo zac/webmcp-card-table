@@ -1,0 +1,38 @@
+{
+  "plugin": "devpost-hackathon",
+  "version": 2,
+  "hackathon": {
+    "slug": "webmcp",
+    "name": "The WebMCP Challenge",
+    "url": "https://webmcp.devpost.com/",
+    "selected": true,
+    "source": "known"
+  },
+  "participant": {
+    "name": "",
+    "display_name": ""
+  },
+  "project": {
+    "name": "webmcp-card-table",
+    "summary": "A live two-player playing-card table designed for people and their agents to use together through direct controls and browser-native WebMCP tools.",
+    "ai_usage": "",
+    "codex_usage": ""
+  },
+  "current_stage": "review-hackathon-rules",
+  "completed_stages": [
+    "start-hackathon"
+  ],
+  "rules_acknowledged": false,
+  "learning": {
+    "status": "not-started",
+    "current_step": "",
+    "completed_steps": [],
+    "plan_file": "plans/webmcp-playing-card-table.md",
+    "checklist_file": ""
+  },
+  "submission": {
+    "draft_file": "devpost-submission.md",
+    "status": "not-started"
+  },
+  "next_command": "review-hackathon-rules"
+}
