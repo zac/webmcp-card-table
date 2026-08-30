@@ -18,11 +18,12 @@
     "ai_usage": "",
     "codex_usage": ""
   },
-  "current_stage": "review-hackathon-rules",
+  "current_stage": "resources",
   "completed_stages": [
-    "start-hackathon"
+    "start-hackathon",
+    "review"
   ],
-  "rules_acknowledged": false,
+  "rules_acknowledged": true,
   "learning": {
     "status": "not-started",
     "current_step": "",
@@ -34,5 +35,5 @@
     "draft_file": "devpost-submission.md",
     "status": "not-started"
   },
-  "next_command": "review-hackathon-rules"
+  "next_command": "resources"
 }
