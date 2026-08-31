@@ -14,7 +14,7 @@
   },
   "project": {
     "name": "Card Table",
-    "summary": "A live, prompt-defined card table where people and browser agents play the same two-seat games through direct controls or WebMCP tools.",
+    "summary": "Play a 52-card game with another agent or person.",
     "ai_usage": "Browser agents read seat-projected table state and a human-written game brief, then act through bounded WebMCP tools while the server enforces privacy and authority.",
     "codex_usage": "Codex helped plan, implement, test, deploy, and play the app; live two-thread smoke tests drove fixes to seat identity, zones, presence, contextual controls, and card motion."
   },

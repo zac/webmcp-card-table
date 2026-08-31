@@ -4,7 +4,7 @@ Card Table
 
 ## One-line Summary
 
-A live, prompt-defined card table where people and browser agents play the same two-seat games through direct controls or WebMCP tools.
+Play a 52-card game with another agent or person.
 
 ## Problem
 
@@ -40,7 +40,7 @@ This split lets a user choose how much control to hand over. They can tell Codex
 
 Codex helped plan, implement, test, deploy, and then play the product. The build started from a written implementation plan and landed as a sequence of small commits covering the shared reducer, Durable Object persistence, WebSocket updates, UI, WebMCP registration, and deployment.
 
-The most useful work happened after the first deployment. Two Codex threads joined the same War room and played through the page's WebMCP tools. That smoke test exposed problems that static tests did not:
+The most useful work happened after the first deployment. Two Codex threads joined the same Card room and played 'War' through the page's WebMCP tools. That smoke test exposed problems that static tests did not:
 
 - The two threads shared browser cookies, so a single room cookie could not safely identify both seats. The app now uses room-and-seat-scoped cookies plus a non-secret per-tab seat selector.
 - Hidden ordered decks looked like enormous hands. The generic zone model now distinguishes hands, ordered decks, player-owned public slots, and face-down war piles.
@@ -156,7 +156,7 @@ Capture at least one narrow mobile image for the repository, but use the cleares
 - Earlier live smoke tests used the Codex in-app browser and two Codex threads. Run one clean final registry and multiplayer pass against the current deployment before final review.
 - An existing Devpost project record is present as an `Untitled` pre-draft. Update project ID `1405082`; do not create a second project.
 - The public video and final screenshots are still missing.
-- Confirm the title and summary before copying this draft into Devpost.
+- The title `Card Table` and the one-line summary are confirmed.
 
 ## Known Limitations
 
@@ -171,8 +171,8 @@ Capture at least one narrow mobile image for the repository, but use the cleares
 
 The official form was fetched on August 30, 2026. It does not ask for a Codex session ID.
 
-- **28249, Submitter Type:** TODO confirm `Individual`.
-- **28250, Country of residence:** TODO confirm `United States`.
+- **28249, Submitter Type:** `Individual`.
+- **28250, Country of residence:** `United States`.
 - **28251, Organization name:** Leave blank unless entering for an organization.
 - **28252, App Status:** `New`. The first commit was created during the submission period.
 - **28253, Existing app changes:** Not applicable if App Status remains `New`.
@@ -181,6 +181,6 @@ The official form was fetched on August 30, 2026. It does not ask for a Codex se
 - **28256, Public code repository:** `https://github.com/zac/webmcp-card-table`
 - **28257, Tested agents or clients:** `Codex in-app browser with browser-native WebMCP, including a two-thread multiplayer smoke test.` Add Chrome only after a separate Chrome pass.
 - **28258, AI tools used:** `Codex for planning, implementation, tests, deployment, browser-based WebMCP playthroughs, and design iteration.`
-- **28259, Learning level:** TODO confirm. Suggested answer: `Significant`.
-- **28260, Career AI value:** TODO confirm. Suggested answer: `Yes`.
+- **28259, Learning level:** TODO confirm after reviewing the explanation in chat. Devpost provides `None`, `Moderate`, or `Significant` without defining thresholds.
+- **28260, Career AI value:** TODO confirm after reviewing the explanation in chat. Devpost provides only `Yes` or `No`.
 - **Required demo video:** TODO add the public YouTube URL.
