@@ -323,11 +323,21 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
 
   return (
     <main className="table-shell">
-      <SiteHeader onHome={onHome} status={webmcpReady ? "WebMCP ready" : "Preparing WebMCP…"} />
-      <section className="table-topbar">
-        <div><p className="eyebrow">{interactive ? "Private prompt-defined table" : "Finished private table"}</p><h1>{view.contract.name}</h1></div>
+      <header className="table-topbar">
+        <button className="wordmark table-wordmark" type="button" onClick={onHome} aria-label="Card Table home">
+          <span className="suit-mark" aria-hidden="true">♠</span>Card Table
+        </button>
+        <div className="table-title">
+          <p className="eyebrow">{interactive ? "Private table" : "Finished table"}</p>
+          <h1>{view.contract.name}</h1>
+        </div>
         <div className="table-top-actions">
-          <div className="table-meta"><span className={`connection-dot ${connection}`} />{connection}<span>{interactive ? `Revision ${view.revision}` : `Replay R${displayView.revision} of R${view.revision}`}</span></div>
+          <div className="table-meta">
+            <span className={`status-chip${webmcpReady ? "" : " pending"}`}><i aria-hidden="true" />{webmcpReady ? "WebMCP ready" : "Preparing WebMCP…"}</span>
+            <span className="meta-divider" aria-hidden="true" />
+            <span className={`connection-dot ${connection}`} />{connection}
+            <span>{interactive ? `R${view.revision}` : `Replay R${displayView.revision} / R${view.revision}`}</span>
+          </div>
           <div className="handoff-actions">
             {knownInviteUrl && view.opponent.presence === "waiting" && <CopyButton label="Copy invite" copiedLabel="Invite copied" text={knownInviteUrl} />}
             {knownInviteUrl && view.opponent.presence === "waiting" && <CopyButton label="Guest Codex prompt" copiedLabel="Guest prompt copied" text={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
@@ -335,7 +345,7 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
             <CopyButton label="Play with Codex" copiedLabel="Codex prompt copied" text={makePlayerPrompt(view, `${cleanTableUrl}#seat=${view.self.seatId}`, view.self.seatId)} />
           </div>
         </div>
-      </section>
+      </header>
 
       <section className="game-layout">
         <div ref={tableSurfaceRef} className={`game-surface${interactive ? "" : " game-finished"}${displayView.revision !== view.revision ? " replaying" : ""}`} onClick={() => setActiveZone(null)}>
