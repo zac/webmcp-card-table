@@ -306,6 +306,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .card-stack { display: flex; justify-content: center; min-height: 116px; }
 .card-stack .playing-card + .playing-card { margin-left: -64px; }
 .public-zones { position: absolute; z-index: 3; top: 24%; bottom: 24%; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 20px; }
+.public-zones.menu-open { z-index: 5; }
 .public-zones.player-lanes { width: min(620px, 82%); flex-direction: column; gap: 12px; }
 .public-seat-lane { display: grid; grid-template-columns: 54px 1fr; width: 100%; align-items: center; gap: 18px; padding: 7px 12px; border-radius: 18px; background: linear-gradient(90deg, transparent, rgb(6 32 26 / 12%) 18%, rgb(6 32 26 / 12%) 82%, transparent); }
 .public-seat-lane.self { grid-template-columns: 1fr 54px; }

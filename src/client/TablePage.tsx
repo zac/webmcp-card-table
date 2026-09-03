@@ -352,7 +352,7 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
       <section className="game-layout">
         <div ref={tableSurfaceRef} className={`game-surface${interactive ? "" : " game-finished"}${displayView.revision !== view.revision ? " replaying" : ""}`} onClick={() => setActiveZone(null)}>
           <OpponentSeat opponent={displayView.opponent} />
-          <div className={`public-zones${hasPlayerLanes ? " player-lanes" : ""}`}>
+          <div className={`public-zones${hasPlayerLanes ? " player-lanes" : ""}${activeZone?.scope === "public" ? " menu-open" : ""}`}>
             {hasPlayerLanes && <PublicSeatLane label="Guest" side="opponent">{orderSeatZones(opponentPublicZones, "opponent").map(renderPublicZone)}</PublicSeatLane>}
             {hasPlayerLanes && <div className="showdown-marker" aria-label={interactive ? turnLabel(view) : "Game over"}><i /><span>{interactive ? "Showdown" : displayView.revision === view.revision ? "Game over" : `Replay R${displayView.revision}`}</span><i /></div>}
             {sharedPublicZones.map(renderPublicZone)}
