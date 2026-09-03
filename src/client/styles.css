@@ -268,6 +268,20 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .connection-dot.live { background: #6dc49e; box-shadow: 0 0 0 4px rgb(109 196 158 / 12%); }
 .connection-dot.offline { background: var(--coral); }
 .copy-invite { border: 1px solid rgb(242 234 215 / 22%); border-radius: 999px; padding: 7px 10px; color: var(--ivory); background: transparent; cursor: pointer; text-transform: uppercase; letter-spacing: .08em; font-size: .64rem; }
+.copy-menu { position: relative; }
+.copy-menu[open] { z-index: 40; }
+.copy-menu > summary { list-style: none; }
+.copy-menu > summary::-webkit-details-marker { display: none; }
+.copy-menu-trigger { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.copy-menu-trigger span { color: var(--brass); font-size: .8rem; line-height: .7; transition: transform 140ms ease; }
+.copy-menu[open] .copy-menu-trigger { border-color: rgb(183 150 92 / 54%); background: rgb(183 150 92 / 10%); }
+.copy-menu[open] .copy-menu-trigger span { transform: rotate(180deg); }
+.copy-menu-list { position: absolute; top: calc(100% + 8px); right: 0; width: 225px; padding: 6px; border: 1px solid rgb(226 201 142 / 38%); border-radius: 11px; background: linear-gradient(155deg, #0c2822, #081c18); box-shadow: 0 18px 42px rgb(0 0 0 / 45%); }
+.copy-menu-list::before { content: ""; position: absolute; top: -5px; right: 25px; width: 9px; height: 9px; border-top: 1px solid rgb(226 201 142 / 38%); border-left: 1px solid rgb(226 201 142 / 38%); background: #0b211d; transform: rotate(45deg); }
+.copy-menu-list button { display: grid; width: 100%; gap: 2px; padding: 9px 10px; color: var(--ivory); border: 0; border-radius: 7px; background: transparent; cursor: pointer; text-align: left; }
+.copy-menu-list button:hover, .copy-menu-list button:focus-visible { background: rgb(183 150 92 / 13%); }
+.copy-menu-list strong { font-size: .72rem; font-weight: 650; }
+.copy-menu-list button span { color: var(--sage); font-size: .62rem; }
 .invite-claimed { border: 1px solid rgb(109 196 158 / 28%); border-radius: 999px; padding: 7px 10px; color: #9ed8be; background: rgb(109 196 158 / 8%); font: .64rem ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .08em; }
 
 .game-layout { width: min(1380px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding-bottom: 16px; }
@@ -441,6 +455,8 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .table-top-actions { grid-column: 1 / -1; width: 100%; align-items: flex-start; justify-content: space-between; }
   .table-meta .status-chip, .meta-divider { display: none; }
   .handoff-actions { justify-content: flex-start; }
+  .copy-menu-list { right: auto; left: 0; }
+  .copy-menu-list::before { right: auto; left: 25px; }
   .contract-ticket { display: none; }
   .table-meta { flex-wrap: wrap; }
   .game-layout { width: calc(100% - 20px); grid-template-columns: 1fr; }

@@ -339,8 +339,7 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
             <span>{interactive ? `R${view.revision}` : `Replay R${displayView.revision} / R${view.revision}`}</span>
           </div>
           <div className="handoff-actions">
-            {knownInviteUrl && view.opponent.presence === "waiting" && <CopyButton label="Copy invite" copiedLabel="Invite copied" text={knownInviteUrl} />}
-            {knownInviteUrl && view.opponent.presence === "waiting" && <CopyButton label="Guest Codex prompt" copiedLabel="Guest prompt copied" text={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
+            {knownInviteUrl && view.opponent.presence === "waiting" && <InviteCopyMenu inviteUrl={knownInviteUrl} codexPrompt={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
             {knownInviteUrl && view.opponent.presence !== "waiting" && <span className="invite-claimed">Invite claimed</span>}
             <CopyButton label="Play with Codex" copiedLabel="Codex prompt copied" text={makePlayerPrompt(view, `${cleanTableUrl}#seat=${view.self.seatId}`, view.self.seatId)} />
           </div>
@@ -670,6 +669,54 @@ function CopyButton({ label, copiedLabel, text }: { label: string; copiedLabel: 
     window.setTimeout(() => setCopied(false), 1_500);
   }
   return <button className="copy-invite" type="button" onClick={() => void copy()}>{copied ? copiedLabel : label}</button>;
+}
+
+function InviteCopyMenu({ inviteUrl, codexPrompt }: { inviteUrl: string; codexPrompt: string }) {
+  const [copied, setCopied] = useState<"url" | "prompt" | null>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const resetTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!detailsRef.current?.open || detailsRef.current.contains(event.target as Node)) return;
+      detailsRef.current.open = false;
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      window.clearTimeout(resetTimer.current);
+    };
+  }, []);
+
+  async function copy(kind: "url" | "prompt", text: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(kind);
+    if (detailsRef.current) detailsRef.current.open = false;
+    window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setCopied(null), 1_500);
+  }
+
+  const label = copied === "url" ? "Invite URL copied" : copied === "prompt" ? "Codex prompt copied" : "Invite guest";
+  return (
+    <details
+      ref={detailsRef}
+      className="copy-menu"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !detailsRef.current?.open) return;
+        detailsRef.current.open = false;
+        summaryRef.current?.focus();
+      }}
+    >
+      <summary ref={summaryRef} className="copy-invite copy-menu-trigger" aria-label="Invite guest, choose what to copy">
+        {label}<span aria-hidden="true">⌄</span>
+      </summary>
+      <div className="copy-menu-list" aria-label="Invite guest options">
+        <button type="button" onClick={() => void copy("url", inviteUrl)}><strong>Copy invite URL</strong><span>Open in any browser</span></button>
+        <button type="button" onClick={() => void copy("prompt", codexPrompt)}><strong>Copy Codex prompt</strong><span>Includes the invite and game brief</span></button>
+      </div>
+    </details>
+  );
 }
 
 function makePlayerPrompt(view: TableView, tableUrl: string, seat: SeatId): string {
