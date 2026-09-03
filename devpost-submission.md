@@ -182,6 +182,6 @@ The official form was fetched on August 30, 2026. It does not ask for a Codex se
 - **28256, Public code repository:** `https://github.com/zac/webmcp-card-table`
 - **28257, Tested agents or clients:** `Codex in-app browser with browser-native WebMCP, including a two-thread multiplayer smoke test.` Add Chrome only after a separate Chrome pass.
 - **28258, AI tools used:** `Codex for planning, implementation, tests, deployment, browser-based WebMCP playthroughs, and design iteration.`
-- **28259, Learning level:** TODO confirm after reviewing the explanation in chat. Devpost provides `None`, `Moderate`, or `Significant` without defining thresholds.
-- **28260, Career AI value:** TODO confirm after reviewing the explanation in chat. Devpost provides only `Yes` or `No`.
+- **28259, Learning level:** `Significant`. Before this project, I had barely heard of WebMCP.
+- **28260, Career AI value:** `Yes`.
 - **Required demo video:** TODO add the public YouTube URL.
