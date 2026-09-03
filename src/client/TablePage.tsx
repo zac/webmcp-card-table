@@ -339,9 +339,12 @@ export function TablePage({ roomId, initialView, inviteUrl, onHome }: TablePageP
             <span>{interactive ? `R${view.revision}` : `Replay R${displayView.revision} / R${view.revision}`}</span>
           </div>
           <div className="handoff-actions">
-            {knownInviteUrl && view.opponent.presence === "waiting" && <InviteCopyMenu inviteUrl={knownInviteUrl} codexPrompt={makePlayerPrompt(view, knownInviteUrl, "guest")} />}
             {knownInviteUrl && view.opponent.presence !== "waiting" && <span className="invite-claimed">Invite claimed</span>}
-            <CopyButton label="Play with Codex" copiedLabel="Codex prompt copied" text={makePlayerPrompt(view, `${cleanTableUrl}#seat=${view.self.seatId}`, view.self.seatId)} />
+            <TableCopyMenu
+              inviteUrl={knownInviteUrl && view.opponent.presence === "waiting" ? knownInviteUrl : undefined}
+              guestCodexPrompt={knownInviteUrl && view.opponent.presence === "waiting" ? makePlayerPrompt(view, knownInviteUrl, "guest") : undefined}
+              currentSeatCodexPrompt={makePlayerPrompt(view, `${cleanTableUrl}#seat=${view.self.seatId}`, view.self.seatId)}
+            />
           </div>
         </div>
       </header>
@@ -661,21 +664,20 @@ function EventLog({ events, selfSeatId }: { events: TableEvent[]; selfSeatId: Se
   return <section className="event-log"><h2>Table log</h2><ol>{[...events].reverse().slice(0, 14).map((event) => <li key={event.id}><span>R{event.revision}</span><p>{eventText(event, selfSeatId)}</p></li>)}</ol></section>;
 }
 
-function CopyButton({ label, copiedLabel, text }: { label: string; copiedLabel: string; text: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_500);
-  }
-  return <button className="copy-invite" type="button" onClick={() => void copy()}>{copied ? copiedLabel : label}</button>;
-}
-
-function InviteCopyMenu({ inviteUrl, codexPrompt }: { inviteUrl: string; codexPrompt: string }) {
-  const [copied, setCopied] = useState<"url" | "prompt" | null>(null);
+function TableCopyMenu({
+  inviteUrl,
+  guestCodexPrompt,
+  currentSeatCodexPrompt,
+}: {
+  inviteUrl?: string;
+  guestCodexPrompt?: string;
+  currentSeatCodexPrompt: string;
+}) {
+  const [copied, setCopied] = useState<"url" | "guestPrompt" | "currentPrompt" | null>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
   const resetTimer = useRef<number | undefined>(undefined);
+  const hasGuestInvite = Boolean(inviteUrl && guestCodexPrompt);
 
   useEffect(() => {
     const closeOnOutsideClick = (event: PointerEvent) => {
@@ -689,7 +691,7 @@ function InviteCopyMenu({ inviteUrl, codexPrompt }: { inviteUrl: string; codexPr
     };
   }, []);
 
-  async function copy(kind: "url" | "prompt", text: string) {
+  async function copy(kind: "url" | "guestPrompt" | "currentPrompt", text: string) {
     await navigator.clipboard.writeText(text);
     setCopied(kind);
     if (detailsRef.current) detailsRef.current.open = false;
@@ -697,7 +699,7 @@ function InviteCopyMenu({ inviteUrl, codexPrompt }: { inviteUrl: string; codexPr
     resetTimer.current = window.setTimeout(() => setCopied(null), 1_500);
   }
 
-  const label = copied === "url" ? "Invite URL copied" : copied === "prompt" ? "Codex prompt copied" : "Invite guest";
+  const label = copied ? "Copied" : "Copy";
   return (
     <details
       ref={detailsRef}
@@ -708,12 +710,17 @@ function InviteCopyMenu({ inviteUrl, codexPrompt }: { inviteUrl: string; codexPr
         summaryRef.current?.focus();
       }}
     >
-      <summary ref={summaryRef} className="copy-invite copy-menu-trigger" aria-label="Invite guest, choose what to copy">
-        {label}<span aria-hidden="true">⌄</span>
+      <summary ref={summaryRef} className="copy-invite copy-menu-trigger" aria-label="Copy a table link or Codex prompt">
+        <span className="copy-menu-label" aria-live="polite">{label}</span><span className="copy-menu-caret" aria-hidden="true" />
       </summary>
-      <div className="copy-menu-list" aria-label="Invite guest options">
-        <button type="button" onClick={() => void copy("url", inviteUrl)}><strong>Copy invite URL</strong><span>Open in any browser</span></button>
-        <button type="button" onClick={() => void copy("prompt", codexPrompt)}><strong>Copy Codex prompt</strong><span>Includes the invite and game brief</span></button>
+      <div className="copy-menu-list" aria-label="Table copy options">
+        {hasGuestInvite && <>
+          <span className="copy-menu-section">Invite another seat</span>
+          <button type="button" onClick={() => void copy("url", inviteUrl!)}><strong>Copy invite URL</strong><span>Open in any browser</span></button>
+          <button type="button" onClick={() => void copy("guestPrompt", guestCodexPrompt!)}><strong>Copy invite prompt</strong><span>Joins the invited seat in Codex</span></button>
+        </>}
+        <span className="copy-menu-section">Play this seat</span>
+        <button type="button" onClick={() => void copy("currentPrompt", currentSeatCodexPrompt)}><strong>Copy play prompt</strong><span>Continues this seat in Codex</span></button>
       </div>
     </details>
   );
