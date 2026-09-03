@@ -14,7 +14,7 @@ Card games make those weaknesses obvious. The app has private information, actio
 
 ## Solution
 
-Card Table is a live, two-player table for games played with a standard 52-card deck. A host picks a preset such as War, Crazy Eights, or Go Fish, or writes a game brief in plain language. The host then opens a private room and shares a one-use invite or a ready-made Codex prompt with the other seat.
+Card Table is a live, two-player table for games played with a standard 52-card deck. A host picks a preset such as War, Crazy Eights, or Go Fish, or writes a game brief in plain language. The host then opens a private room. One **Copy** menu provides an invite URL, an invite prompt for Codex to join the other seat, and a play prompt for Codex to continue the current seat.
 
 Each player can act through the table interface, ask Codex to act for them, or let an agent play its seat. The page registers WebMCP tools that match the current table contract. A War table exposes operations such as `inspect_table`, `play_next_card`, `collect_pile`, `announce`, and `react`. A different contract gets a different tool set.
 
@@ -63,6 +63,7 @@ Codex also wrote and ran reducer tests, Worker integration tests, WebMCP lifecyc
 - Room-and-seat-scoped secure cookies that allow two Codex threads to use different seats in one shared cookie jar.
 - Real-time projected updates and presence over hibernatable WebSockets.
 - Contextual card and pile controls, responsive table layouts, and reduced-motion support.
+- One compact copy menu with separate invite URL, invite prompt, and current-seat play prompt actions.
 - Host-confirmed game completion followed by read-only revision replay.
 
 ## Architecture
@@ -93,7 +94,7 @@ No account or credentials are required.
 4. Call `draft_table` with the War preset. Confirm that the visible game name, brief, zones, and allowed actions update.
 5. Call `start_table`. The tool should pause for an in-page approval dialog. Decline once to verify cancellation, then call it again and approve.
 6. On the new table, call `inspect_table`. Confirm that your ordered deck exposes a count but no card faces or card IDs.
-7. Copy the guest Codex prompt or the one-use invite. Open it in a second Codex thread or browser tab. Confirm the host changes from waiting to `Guest joined · online`.
+7. Open **Copy** and choose **Copy invite prompt**. Run it in a second Codex thread or browser tab. Confirm the host changes from waiting to `Guest joined · online`. **Copy play prompt** instead continues the seat already open in the current browser.
 8. From each seat, call `play_next_card` to move the next hidden deck card to that player's face-up battle slot. Confirm that the UI animates both tool-driven moves.
 9. Have the higher card's owner call `collect_pile` for both battle slots, placing the cards at the bottom of their deck.
 10. Make one move through the direct table controls and confirm that both seats receive the same real-time update.
@@ -129,7 +130,7 @@ Planned length: about 2 minutes 30 seconds.
 
 - **0:00 to 0:15:** Cold open on an active War table. One Codex seat plays a card through WebMCP, the other answers, and the winning agent collects the battle.
 - **0:15 to 0:35:** Return to the lobby. Show `draft_table` preparing War and `start_table` waiting for human approval.
-- **0:35 to 0:55:** Approve the room, copy the guest Codex prompt, and show the second seat join. Point out the live presence state.
+- **0:35 to 0:55:** Approve the room, open **Copy**, choose **Copy invite prompt**, and show the second seat join. Point out the live presence state and the separate play prompt for the current seat.
 - **0:55 to 1:35:** Show `inspect_table`, private deck projection, `play_next_card`, card movement, a tie using the per-player war piles, and `collect_pile`.
 - **1:35 to 1:55:** Make a move through the direct UI. Explain that UI and agent actions use the same reducer and server authorization path.
 - **1:55 to 2:15:** Briefly show the route-specific tool registry and explain that the finished table contracts to `inspect_table` only.

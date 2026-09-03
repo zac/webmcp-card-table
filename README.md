@@ -8,7 +8,7 @@ The product has one shape:
 
 1. Pick Go Fish, Crazy Eights, War, or Open Table as a starting point.
 2. Edit the plain-language game brief and optional table mechanics.
-3. Open the table and copy a one-use guest invite, a ready-made guest Codex prompt, or a prompt for Codex to play your own seat. The host sees when the invite is claimed and whether the guest is online.
+3. Open the table and use the **Copy** menu. Copy an invite URL, an invite prompt for Codex, or a play prompt for the current seat. The host sees when the invite is claimed and whether the guest is online.
 4. Play by clicking cards and piles, through WebMCP tools, or both. Every action uses the same reducer and server authorization path.
 5. When play is over, the host confirms **End game**. The room freezes for both seats and becomes a read-only revision replay instead of disappearing.
 
@@ -113,7 +113,7 @@ For a browser acceptance pass:
 3. Draft a preset or custom game and confirm the visible rules slip changes.
 4. Call `start_table`; decline once, then call it again and approve.
 5. Confirm the table registry matches the contract, call `inspect_table`, and make one legal mutation.
-6. Copy the guest Codex prompt, redeem the invitation in a second Codex thread that shares browser storage, and confirm the host changes from Waiting for guest to Guest joined · online before the guest plays a card.
+6. Open **Copy** and choose **Copy invite prompt**. Run it in a second Codex thread that shares browser storage, then confirm the host changes from Waiting for guest to Guest joined · online before the guest plays a card. Use **Copy play prompt** when Codex should continue the seat already open in the current browser.
 7. For War, confirm both decks show counts and backs only, `end_turn` is absent, then call `play_next_card` from each seat and `collect_pile` from the winner.
 8. Refresh both seats and confirm they recover the current projected snapshot.
 9. As the guest, confirm `finish_table` and the End game control are absent. As the host, call `finish_table`, decline once, then approve it.
